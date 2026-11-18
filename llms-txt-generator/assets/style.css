@@ -1,0 +1,265 @@
+/* LLMs.txt Generator — Estilos */
+
+#llmstxt-app {
+    max-width: 680px;
+    margin: 0 auto;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.llmstxt-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 36px 40px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+
+.llmstxt-card h2 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #1a202c;
+    margin: 0 0 8px 0;
+}
+
+.llmstxt-card h2 code {
+    background: #edf2ff;
+    color: #3b5bdb;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 1.4rem;
+}
+
+.llmstxt-subtitle {
+    color: #64748b;
+    margin: 0 0 28px 0;
+    line-height: 1.6;
+}
+
+/* Campos del formulario */
+.llmstxt-field {
+    margin-bottom: 20px;
+}
+
+.llmstxt-field label {
+    display: block;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 6px;
+    font-size: 0.9rem;
+}
+
+.llmstxt-hint {
+    font-weight: 400;
+    color: #94a3b8;
+    font-size: 0.8rem;
+    display: block;
+    margin-top: 2px;
+}
+
+.llmstxt-field input,
+.llmstxt-field textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    color: #1a202c;
+    background: #f9fafb;
+    box-sizing: border-box;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    font-family: inherit;
+}
+
+.llmstxt-field input:focus,
+.llmstxt-field textarea:focus {
+    outline: none;
+    border-color: #3b5bdb;
+    box-shadow: 0 0 0 3px rgba(59,91,219,0.1);
+    background: #fff;
+}
+
+/* Botones */
+.llmstxt-btn {
+    display: inline-block;
+    padding: 12px 24px;
+    background: #3b5bdb;
+    color: #fff !important;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.2s, transform 0.1s;
+    width: 100%;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+.llmstxt-btn:hover {
+    background: #2f4ac4;
+    transform: translateY(-1px);
+}
+
+.llmstxt-btn:active {
+    transform: translateY(0);
+}
+
+.llmstxt-btn:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.llmstxt-btn-secondary {
+    background: #fff;
+    color: #3b5bdb !important;
+    border: 2px solid #3b5bdb;
+}
+
+.llmstxt-btn-secondary:hover {
+    background: #edf2ff;
+}
+
+.llmstxt-btn-cta {
+    background: #16a34a;
+    margin-top: 12px;
+}
+
+.llmstxt-btn-cta:hover {
+    background: #15803d;
+}
+
+/* Privacidad */
+.llmstxt-privacy {
+    text-align: center;
+    font-size: 0.78rem;
+    color: #94a3b8;
+    margin: 10px 0 0 0;
+}
+
+/* Error */
+.llmstxt-error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #dc2626;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.9rem;
+    margin-bottom: 16px;
+}
+
+/* Loading */
+#llmstxt-step-loading {
+    text-align: center;
+    padding: 60px 40px;
+}
+
+#llmstxt-step-loading h3 {
+    color: #1a202c;
+    margin: 20px 0 8px;
+}
+
+#llmstxt-step-loading p {
+    color: #64748b;
+}
+
+.llmstxt-spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid #e2e8f0;
+    border-top-color: #3b5bdb;
+    border-radius: 50%;
+    animation: llmstxt-spin 0.8s linear infinite;
+    margin: 0 auto;
+}
+
+@keyframes llmstxt-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Resultado */
+.llmstxt-success-header {
+    text-align: center;
+    margin-bottom: 24px;
+}
+
+.llmstxt-check {
+    display: inline-flex;
+    width: 48px;
+    height: 48px;
+    background: #dcfce7;
+    color: #16a34a;
+    border-radius: 50%;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+}
+
+.llmstxt-success-header h3 {
+    margin: 0 0 4px;
+    color: #1a202c;
+}
+
+.llmstxt-success-header p {
+    color: #64748b;
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.llmstxt-result-box {
+    background: #0f172a;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 16px;
+    overflow-x: auto;
+}
+
+.llmstxt-result-box pre {
+    color: #e2e8f0;
+    font-family: 'Fira Code', 'Courier New', monospace;
+    font-size: 0.82rem;
+    line-height: 1.7;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.llmstxt-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+/* CTA box */
+.llmstxt-cta-box {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 10px;
+    padding: 20px 24px;
+    text-align: center;
+}
+
+.llmstxt-cta-box p {
+    margin: 0 0 8px;
+    color: #166534;
+    font-size: 0.9rem;
+}
+
+.llmstxt-cta-box p:first-child {
+    font-weight: 700;
+    font-size: 1rem;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .llmstxt-card {
+        padding: 24px 20px;
+    }
+    .llmstxt-actions {
+        grid-template-columns: 1fr;
+    }
+}
