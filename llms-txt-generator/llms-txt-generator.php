@@ -3,7 +3,7 @@
  * Plugin Name: LLMs.txt Generator
  * Plugin URI:  https://tusitio.com
  * Description: Genera archivos llms.txt para negocios usando IA (OpenAI GPT-5 mini + web search). Procesamiento asíncrono vía WP-Cron.
- * Version:     3.3.0
+ * Version:     3.3.1
  * Author:      Tu Agencia SEO
  * License:     GPL2
  * Text Domain: llms-txt-generator
@@ -13,7 +13,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'LLMSTXT_VERSION',       '3.3.0' );
+define( 'LLMSTXT_VERSION',       '3.3.1' );
 define( 'LLMSTXT_PLUGIN_DIR',    plugin_dir_path( __FILE__ ) );
 define( 'LLMSTXT_PLUGIN_URL',    plugin_dir_url( __FILE__ ) );
 define( 'LLMSTXT_RATE_LIMIT',    5 );     // envíos exitosos por IP…
@@ -236,7 +236,9 @@ add_action( 'admin_post_llmstxt_test_email', function() {
     if ( is_wp_error( $result ) ) {
         llmstxt_admin_redirect( 'settings', 'error', 'El email de prueba falló: ' . $result->get_error_message() );
     }
-    llmstxt_admin_redirect( 'settings', 'warning', "WordPress aceptó el email de prueba y lo pasó a tu servidor, dirigido a $to. Si en 5 minutos no está en tu bandeja ni en spam, tu servidor no está entregando los correos: configura SMTP (ver Diagnóstico → Email)." );
+    $last = get_transient( 'llmstxt_last_mail' );
+    $via  = $last ? ( 'smtp' === $last['mailer'] ? "SMTP {$last['host']}:{$last['port']}" : $last['mailer'] ) : 'desconocido';
+    llmstxt_admin_redirect( 'settings', 'warning', "Email de prueba enviado a $to vía $via. Si en 5 minutos no está en esa bandeja ni en spam, mira la fila \"Email: último envío\" del Diagnóstico." );
 } );
 
 add_action( 'admin_post_llmstxt_reprocess', function() {
@@ -422,10 +424,35 @@ function llmstxt_settings_page() {
                     <?php if ( empty( $mail['from_warnings'] ) ) echo $ok; ?></td>
             </tr>
             <tr>
-                <td>Email: método de envío</td>
-                <td><?php echo $mail['smtp']
-                    ? $ok . esc_html( $mail['smtp_detail'] )
-                    : $warn . 'WordPress envía con la función <code>mail()</code> del servidor, sin autenticación. Gmail, Outlook, etc. suelen descartar esos correos o mandarlos a spam. Instala <strong>WP Mail SMTP</strong> (o FluentSMTP) y conéctalo a tu correo del dominio, Brevo, SendGrid o Mailgun.'; ?></td>
+                <td>Email: plugins que intervienen</td>
+                <td><?php
+                    if ( $mail['override'] ) echo 'wp_mail() reemplazado por <code>' . esc_html( $mail['override'] ) . '</code><br>';
+                    echo $mail['sources']
+                        ? 'Modifican el envío: <code>' . implode( '</code>, <code>', array_map( 'esc_html', $mail['sources'] ) ) . '</code><br><small>No todos son plugins SMTP. Lo que cuenta es el "Último envío" de abajo.</small>'
+                        : ( $mail['override'] ? '' : 'Ninguno.' ); ?></td>
+            </tr>
+            <tr>
+                <td>Email: último envío</td>
+                <td><?php
+                    $last = $mail['last'];
+                    if ( ! $last ) {
+                        echo $warn . 'Aún no hay datos. Pulsa "Enviarme un email de prueba".';
+                    } else {
+                        $is_smtp = 'smtp' === $last['mailer'];
+                        $via     = $is_smtp
+                            ? 'SMTP <code>' . esc_html( $last['host'] . ':' . $last['port'] ) . '</code>' . ( $last['auth'] ? ' (con autenticación)' : ' <strong>(sin autenticación)</strong>' )
+                            : '<code>' . esc_html( $last['mailer'] ) . '</code>';
+                        echo ( $is_smtp && $last['auth'] ? $ok : $warn )
+                            . 'Para <code>' . esc_html( $last['to'] ) . '</code> vía ' . $via
+                            . ' — WordPress: ' . esc_html( $last['result'] ) . ' <small>(' . esc_html( $last['time'] ) . ')</small>';
+                        if ( 'mail' === $last['mailer'] ) {
+                            echo '<br>Se envió con la función <code>mail()</code> del servidor, sin autenticación: Gmail/Outlook suelen descartarlo. Configura <strong>WP Mail SMTP</strong> (o FluentSMTP) con tu correo del dominio, Brevo, SendGrid o Mailgun.';
+                        } elseif ( 'sendmail' === $last['mailer'] || 'qmail' === $last['mailer'] ) {
+                            echo '<br>Se envió con ' . esc_html( $last['mailer'] ) . ' del servidor, sin autenticación. Configura un plugin SMTP.';
+                        } elseif ( $is_smtp ) {
+                            echo '<br>El servidor SMTP aceptó el correo. Si no llega, revisa spam, el registro de envíos de tu plugin SMTP y los registros SPF/DKIM de tu dominio.';
+                        }
+                    } ?></td>
             </tr>
             <?php if ( $last_db_error ) : ?>
             <tr>
@@ -958,23 +985,59 @@ function llmstxt_mail_diagnostics() {
         $warnings[] = "El dominio del remitente ($from_domain) no coincide con el del sitio ($site_domain). Asegúrate de que tu SMTP esté autorizado para enviar desde $from_domain.";
     }
 
-    // Un plugin SMTP se engancha a phpmailer_init o reemplaza wp_mail() (función "pluggable").
-    $smtp   = false;
-    $detail = '';
-    if ( has_action( 'phpmailer_init' ) ) {
-        $smtp   = true;
-        $detail = 'Hay un plugin o configuración que modifica el envío (phpmailer_init). Si aun así no llegan, revisa el registro de envíos de ese plugin.';
-    } else {
-        try {
-            $file = ( new ReflectionFunction( 'wp_mail' ) )->getFileName();
-            if ( $file && false === strpos( wp_normalize_path( $file ), '/wp-includes/' ) ) {
-                $smtp   = true;
-                $detail = 'wp_mail() está reemplazado por un plugin (' . basename( dirname( $file ) ) . ').';
-            }
-        } catch ( ReflectionException $e ) {}
-    }
+    // Qué plugins se enganchan a phpmailer_init (no todos son SMTP) y si wp_mail() está reemplazado.
+    $sources = llmstxt_phpmailer_hook_sources();
+    $override = '';
+    try {
+        $file = ( new ReflectionFunction( 'wp_mail' ) )->getFileName();
+        if ( $file && false === strpos( wp_normalize_path( $file ), '/wp-includes/' ) ) {
+            $override = llmstxt_source_from_path( $file );
+        }
+    } catch ( ReflectionException $e ) {}
 
-    return [ 'from' => $from, 'from_warnings' => $warnings, 'smtp' => $smtp, 'smtp_detail' => $detail ];
+    return [
+        'from'          => $from,
+        'from_warnings' => $warnings,
+        'sources'       => $sources,
+        'override'      => $override,
+        'last'          => get_transient( 'llmstxt_last_mail' ),
+    ];
+}
+
+/** Convierte la ruta de un archivo en "plugin: carpeta", "tema: …" u otro origen legible. */
+function llmstxt_source_from_path( $path ) {
+    $path = wp_normalize_path( (string) $path );
+    if ( preg_match( '#/(mu-plugins|plugins)/([^/]+)#', $path, $m ) ) {
+        return ( 'mu-plugins' === $m[1] ? 'mu-plugin: ' : 'plugin: ' ) . preg_replace( '/\.php$/', '', $m[2] );
+    }
+    if ( preg_match( '#/themes/([^/]+)#', $path, $m ) ) return 'tema: ' . $m[1];
+    return basename( $path );
+}
+
+/** Lista los orígenes (plugins/temas) de los callbacks enganchados a phpmailer_init, sin incluir este plugin. */
+function llmstxt_phpmailer_hook_sources() {
+    global $wp_filter;
+    $sources = [];
+    if ( empty( $wp_filter['phpmailer_init'] ) ) return [];
+    foreach ( $wp_filter['phpmailer_init']->callbacks as $callbacks ) {
+        foreach ( $callbacks as $cb ) {
+            $fn = $cb['function'];
+            try {
+                if ( is_array( $fn ) ) {
+                    $ref = new ReflectionMethod( $fn[0], $fn[1] );
+                } elseif ( is_string( $fn ) && strpos( $fn, '::' ) ) {
+                    $ref = new ReflectionMethod( $fn );
+                } else {
+                    $ref = new ReflectionFunction( $fn );
+                }
+                $src = llmstxt_source_from_path( $ref->getFileName() );
+            } catch ( ReflectionException $e ) {
+                $src = 'desconocido';
+            }
+            if ( false === strpos( $src, 'llms-txt-generator' ) ) $sources[ $src ] = true;
+        }
+    }
+    return array_keys( $sources );
 }
 
 function llmstxt_mail_headers( $content_type = true ) {
@@ -1010,13 +1073,37 @@ function llmstxt_send_to_user( $email, $name, $website, $content ) {
                . "— {$from_name}";
 
     $mail_error = null;
+    $transport  = null;
     $catch      = function( $wp_error ) use ( &$mail_error ) { $mail_error = $wp_error; };
+    // Se ejecuta al final, después de cualquier plugin SMTP: registra por dónde sale realmente el correo.
+    $capture    = function( $phpmailer ) use ( &$transport, $email ) {
+        if ( 'mail' === $phpmailer->Mailer && empty( $phpmailer->Sender ) ) {
+            // Con mail() del servidor, alinear el Return-Path con el remitente mejora SPF/DMARC.
+            $phpmailer->Sender = $phpmailer->From;
+        }
+        $transport = [
+            'to'     => $email,
+            'mailer' => (string) $phpmailer->Mailer,
+            'host'   => (string) $phpmailer->Host,
+            'port'   => (int) $phpmailer->Port,
+            'auth'   => (bool) $phpmailer->SMTPAuth,
+            'from'   => (string) $phpmailer->From,
+            'sender' => (string) $phpmailer->Sender,
+            'time'   => current_time( 'mysql' ),
+        ];
+    };
     add_action( 'wp_mail_failed', $catch );
+    add_action( 'phpmailer_init', $capture, PHP_INT_MAX );
     $sent = wp_mail( $email, $subject, $message, llmstxt_mail_headers(), [ $file ] );
+    remove_action( 'phpmailer_init', $capture, PHP_INT_MAX );
     remove_action( 'wp_mail_failed', $catch );
 
     @unlink( $file );
     @rmdir( $dir );
+
+    $transport = $transport ?: [ 'to' => $email, 'mailer' => '(desconocido: wp_mail() reemplazado por un plugin)', 'host' => '', 'port' => 0, 'auth' => false, 'from' => '', 'sender' => '', 'time' => current_time( 'mysql' ) ];
+    $transport['result'] = $sent ? 'aceptado' : 'fallido';
+    set_transient( 'llmstxt_last_mail', $transport, WEEK_IN_SECONDS );
 
     if ( ! $sent ) {
         $detail = $mail_error instanceof WP_Error ? $mail_error->get_error_message() : 'sin detalle';

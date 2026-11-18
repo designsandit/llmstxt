@@ -1,5 +1,11 @@
 # Changelog — LLMs.txt Generator
 
+## 3.3.1
+- Diagnóstico → **Email: último envío**: registra por dónde salió realmente el último correo (SMTP con host y puerto, o `mail()`/sendmail del servidor), a qué dirección se envió y si hubo autenticación.
+- Diagnóstico → **Email: plugins que intervienen**: lista qué plugins o temas modifican el envío. En la 3.3.0 cualquier plugin enganchado contaba como "SMTP", lo que podía dar un ✓ engañoso.
+- El aviso del email de prueba dice a qué dirección se envió y por qué vía.
+- Si se envía con `mail()` del servidor, el Return-Path se alinea con el remitente para mejorar SPF/DMARC.
+
 ## 3.3.0
 Para cuando un lead aparece como "Enviado" pero el correo no llega.
 
