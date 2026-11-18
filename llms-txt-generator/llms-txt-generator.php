@@ -3,7 +3,7 @@
  * Plugin Name: LLMs.txt Generator
  * Plugin URI:  https://github.com/designsandit/llmstxt
  * Description: Genera archivos llms.txt para negocios usando IA (OpenAI GPT-5 mini + web search). Procesamiento asíncrono vía WP-Cron.
- * Version:     3.5.0
+ * Version:     3.6.0
  * Author:      Designs and IT
  * Author URI:  https://www.designsandit.com/?utm_source=media-seo&utm_medium=plugin&utm_campaign=lista-plugins
  * License:     GPL2
@@ -14,7 +14,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'LLMSTXT_VERSION',       '3.5.0' );
+define( 'LLMSTXT_VERSION',       '3.6.0' );
 define( 'LLMSTXT_AUTHOR',        'Designs and IT' );
 define( 'LLMSTXT_AUTHOR_URI',    'https://www.designsandit.com/?utm_source=media-seo&utm_medium=plugin&utm_campaign=lista-plugins' );
 define( 'LLMSTXT_PLUGIN_FILE',    __FILE__ );
@@ -30,6 +30,7 @@ define( 'LLMSTXT_CRON_HOOK',     'llmstxt_process_job' );
 
 require_once LLMSTXT_PLUGIN_DIR . 'includes/updater.php';  // actualizaciones desde GitHub
 require_once LLMSTXT_PLUGIN_DIR . 'includes/privacy.php';  // CSV, borrado de leads y herramientas de privacidad
+require_once LLMSTXT_PLUGIN_DIR . 'includes/report.php';   // kit de visibilidad: schema, robots.txt y NAP
 
 function llmstxt_log( $message ) {
     error_log( '[LLMs.txt Generator] ' . $message );
@@ -62,6 +63,8 @@ function llmstxt_schema_columns() {
         'created_at'     => 'DATETIME NULL',
         'updated_at'     => 'DATETIME NULL',
         'llms_content'   => 'LONGTEXT NULL',  // último llms.txt generado (descargable desde el admin)
+        'profiles'       => 'TEXT NULL',      // URLs de perfiles del negocio (sameAs), una por línea
+        'report'         => 'LONGTEXT NULL',  // informe JSON: schema, robots.txt y NAP
     ];
 }
 
@@ -225,13 +228,21 @@ add_action( 'admin_post_llmstxt_download', function() {
     llmstxt_check_admin_action( 'llmstxt_download' );
     global $wpdb;
     $lead_id = isset( $_GET['lead_id'] ) ? absint( $_GET['lead_id'] ) : 0;
-    $content = $wpdb->get_var( $wpdb->prepare( 'SELECT llms_content FROM ' . llmstxt_table() . ' WHERE id = %d', $lead_id ) );
+    $schema  = isset( $_GET['file'] ) && 'schema' === $_GET['file'];
+    $row     = $wpdb->get_row( $wpdb->prepare( 'SELECT llms_content, report FROM ' . llmstxt_table() . ' WHERE id = %d', $lead_id ) );
+    $content = '';
+    if ( $row && $schema ) {
+        $report  = json_decode( (string) $row->report, true );
+        $content = ! empty( $report['schema']['data'] ) ? llmstxt_schema_snippet( $report['schema']['data'] ) : '';
+    } elseif ( $row ) {
+        $content = (string) $row->llms_content;
+    }
     if ( ! $content ) {
-        llmstxt_admin_redirect( 'llmstxt-leads', 'error', "El lead #$lead_id no tiene un llms.txt guardado. Pulsa \"Reprocesar\" para generarlo." );
+        llmstxt_admin_redirect( 'llmstxt-leads', 'error', "El lead #$lead_id no tiene ese archivo guardado. Pulsa \"Reprocesar\" para generarlo." );
     }
     nocache_headers();
     header( 'Content-Type: text/plain; charset=UTF-8' );
-    header( 'Content-Disposition: attachment; filename="llms.txt"' );
+    header( 'Content-Disposition: attachment; filename="' . ( $schema ? 'datos-estructurados.txt' : 'llms.txt' ) . '"' );
     echo $content; // texto plano descargado como archivo, no se renderiza como HTML
     exit;
 } );
@@ -531,6 +542,9 @@ function llmstxt_leads_page() {
                         <?php if ( ! empty( $lead->llms_content ) ) : ?>
                             <a class="button button-small" href="<?php echo esc_url( llmstxt_action_url( 'llmstxt_download', [ 'lead_id' => $lead->id ] ) ); ?>">Descargar llms.txt</a>
                         <?php endif; ?>
+                        <?php if ( ! empty( $lead->report ) && false !== strpos( $lead->report, '"schema":{' ) ) : ?>
+                            <a class="button button-small" href="<?php echo esc_url( llmstxt_action_url( 'llmstxt_download', [ 'lead_id' => $lead->id, 'file' => 'schema' ] ) ); ?>">Schema</a>
+                        <?php endif; ?>
                         <?php if ( empty( $lead->urls_submitted ) ) : ?>
                             <small>Sin URLs guardadas</small>
                         <?php else : ?>
@@ -570,12 +584,12 @@ add_shortcode( 'llmstxt_generator', function() {
     <div class="llms-grid">
 
         <div class="llms-intro">
-            <span class="llms-badge">Herramienta gratuita</span>
+            <span class="llms-badge">Kit gratuito de visibilidad en IA</span>
             <h2 class="llms-title">Haz que la IA <span>entienda</span> tu negocio</h2>
-            <p class="llms-lead">Creamos tu archivo <strong>llms.txt</strong>: la ficha que ChatGPT, Claude, Gemini y Perplexity leen para saber quién eres, qué ofreces y dónde estás.</p>
+            <p class="llms-lead">Te enviamos tu archivo <strong>llms.txt</strong>, la <strong>ficha de datos estructurados</strong> de tu negocio y una revisión de si ChatGPT, Claude, Perplexity y Google pueden leer tu web y encontrar tus datos sin contradicciones.</p>
             <ul class="llms-benefits">
-                <li><span class="llms-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span><strong>Listo en 1–3 minutos</strong>, directo a tu email</span></li>
-                <li><span class="llms-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M21 21l-4.3-4.3"/><circle cx="11" cy="11" r="7"/></svg></span><span>La IA <strong>visita tus páginas reales</strong>: nada inventado</span></li>
+                <li><span class="llms-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span><strong>Listo en unos minutos</strong>, directo a tu email</span></li>
+                <li><span class="llms-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M21 21l-4.3-4.3"/><circle cx="11" cy="11" r="7"/></svg></span><span>Revisamos <strong>tus páginas reales</strong> y tu robots.txt: nada inventado</span></li>
                 <li><span class="llms-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M12 3l7 4v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9V7z"/><path d="M9 12l2 2 4-4"/></svg></span><span>Gratis y sin spam. Solo te escribimos para enviarte el archivo</span></li>
             </ul>
         </div>
@@ -636,6 +650,12 @@ add_shortcode( 'llmstxt_generator', function() {
                                     <span class="llms-err" id="llms-err-phone" hidden></span>
                                 </div>
                             </div>
+                            <div class="llms-field">
+                                <label for="llms-profiles">Tus perfiles <span class="llms-optional">(opcional)</span></label>
+                                <textarea id="llms-profiles" rows="3" placeholder="Enlace a tu ficha de Google Maps&#10;https://facebook.com/tunegocio&#10;https://linkedin.com/company/tunegocio" aria-describedby="llms-help-profiles llms-err-profiles"></textarea>
+                                <span class="llms-help" id="llms-help-profiles">Uno por línea. Los incluimos en tu ficha de datos estructurados para que la IA sepa que son tuyos.</span>
+                                <span class="llms-err" id="llms-err-profiles" hidden></span>
+                            </div>
                         </div>
                     </section>
 
@@ -683,12 +703,12 @@ add_shortcode( 'llmstxt_generator', function() {
                     <span class="llms-done-check" aria-hidden="true"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M5 12l5 5 9-10"/></svg></span>
                     <div>
                         <h3 class="llms-done-title" tabindex="-1">¡Listo, <span data-out="first"></span>!</h3>
-                        <p>Ya estamos trabajando en el llms.txt de <strong data-out="biz"></strong>.</p>
+                        <p>Ya estamos preparando el kit de <strong data-out="biz"></strong>.</p>
                     </div>
                 </div>
                 <ol class="llms-timeline">
                     <li class="is-done"><span class="llms-tl-ico"><?php echo $check; ?></span><div><strong>Solicitud recibida</strong><small>Ahora mismo</small></div></li>
-                    <li class="is-working"><span class="llms-tl-ico"><svg class="llms-spin" width="18" height="18" viewBox="0 0 50 50" aria-hidden="true" focusable="false"><path d="M25 5a20 20 0 0 1 20 20" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/></svg></span><div><strong>La IA está leyendo tus <span data-out="count"></span> páginas</strong><small>Entre 1 y 3 minutos</small></div></li>
+                    <li class="is-working"><span class="llms-tl-ico"><svg class="llms-spin" width="18" height="18" viewBox="0 0 50 50" aria-hidden="true" focusable="false"><path d="M25 5a20 20 0 0 1 20 20" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/></svg></span><div><strong>Revisando tus <span data-out="count"></span> páginas</strong><small>Llms.txt, datos estructurados, robots.txt y coherencia de tus datos. De 2 a 5 minutos.</small></div></li>
                     <li class="is-next"><span class="llms-tl-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></span><div><strong>Te llega a <span data-out="email"></span></strong><small>Si no lo ves, revisa la carpeta de spam</small></div></li>
                 </ol>
                 <div class="llms-preview" aria-label="Vista previa del archivo">
@@ -698,7 +718,7 @@ add_shortcode( 'llmstxt_generator', function() {
                 <div class="llms-cta">
                     <div>
                         <strong>¿Quieres aparecer en las respuestas de la IA?</strong>
-                        <p>El llms.txt es el primer paso. Te ayudamos con SEO Local y GEO.</p>
+                        <p>Este kit es el punto de partida. Te ayudamos con SEO Local y GEO para que ChatGPT y Google te recomienden.</p>
                     </div>
                     <a class="llms-btn llms-btn-cta" href="<?php echo esc_url( $cta_url ); ?>">¡Quiero más clientes!</a>
                 </div>
@@ -743,6 +763,7 @@ function llmstxt_ajax_generate() {
     $address = sanitize_text_field(     wp_unslash( $_POST['address'] ?? '' ) );
     $phone   = sanitize_text_field(     wp_unslash( $_POST['phone']   ?? '' ) );
     $urls    = sanitize_textarea_field( wp_unslash( $_POST['urls']    ?? '' ) );
+    $profiles_raw = sanitize_textarea_field( wp_unslash( $_POST['profiles'] ?? '' ) );
 
     if ( '' === $name )                 llmstxt_field_error( 'name', 'Escribe tu nombre.' );
     if ( mb_strlen( $name ) > 100 )     llmstxt_field_error( 'name', 'El nombre es demasiado largo (máx. 100 caracteres).' );
@@ -773,12 +794,19 @@ function llmstxt_ajax_generate() {
     }
     $urls = implode( "\n", $urls_list );
 
+    $profiles = llmstxt_parse_profiles( $profiles_raw );
+    $given    = count( array_filter( preg_split( '/[\s,]+/', $profiles_raw ) ) );
+    if ( $given > count( $profiles ) && $given <= LLMSTXT_MAX_PROFILES ) {
+        llmstxt_field_error( 'profiles', 'Algún enlace de perfil no es válido. Escribe uno por línea, empezando por https://' );
+    }
+
     $lead_id = llmstxt_insert_lead( [
         'email'          => $email,
         'name'           => $name,
         'website'        => $website,
         'nap'            => $nap,
         'urls_submitted' => $urls,
+        'profiles'       => implode( "\n", $profiles ),
         'ip_address'     => $ip,
     ] );
     if ( ! $lead_id ) {
@@ -863,7 +891,20 @@ function llmstxt_run_job( $lead_id, $force = false, $legacy_nap = '', $legacy_ur
     // Guardar el archivo antes de enviar: así se puede descargar desde el admin aunque el email no llegue.
     $wpdb->update( $table, [ 'llms_content' => $content ], [ 'id' => $lead_id ] );
 
-    $sent = llmstxt_send_to_user( $lead->email, $lead->name, $lead->website, $content );
+    // Kit de visibilidad: schema, robots.txt y NAP. Si alguna parte falla, el email sale sin ella.
+    if ( ! $lead->nap && $legacy_nap ) $lead->nap = $legacy_nap;
+    if ( ! $lead->urls_submitted && $legacy_urls ) $lead->urls_submitted = $legacy_urls;
+    $report = llmstxt_build_report( $lead, $content );
+    $wpdb->update( $table, [ 'report' => wp_json_encode( $report, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) ], [ 'id' => $lead_id ] );
+
+    $attachments = [];
+    if ( ! empty( $report['schema']['data'] ) ) {
+        $attachments['datos-estructurados.txt'] = llmstxt_schema_snippet( $report['schema']['data'] );
+    }
+    $sent = llmstxt_send_to_user( $lead->email, $lead->name, $lead->website, $content, [
+        'attachments' => $attachments,
+        'report'      => llmstxt_report_text( $report, $lead->website ),
+    ] );
     if ( is_wp_error( $sent ) ) {
         return llmstxt_fail_lead( $lead_id, $sent );
     }
@@ -1166,26 +1207,40 @@ function llmstxt_mail_headers( $content_type = true ) {
     return $headers;
 }
 
-/** Envía el archivo adjunto como "llms.txt". @return true|WP_Error */
-function llmstxt_send_to_user( $email, $name, $website, $content ) {
+/**
+ * Envía el kit por email. Adjuntos: llms.txt y los de $extra['attachments'] (nombre => contenido).
+ * $extra['report'] es el texto del informe. @return true|WP_Error
+ */
+function llmstxt_send_to_user( $email, $name, $website, $content, array $extra = [] ) {
     $dir = trailingslashit( get_temp_dir() ) . 'llmstxt-' . wp_generate_password( 12, false, false );
     if ( ! wp_mkdir_p( $dir ) ) {
         return new WP_Error( 'tmp', 'No se pudo crear la carpeta temporal para el adjunto.' );
     }
-    $file = $dir . '/llms.txt';
-    if ( false === file_put_contents( $file, $content ) ) {
-        @rmdir( $dir );
-        return new WP_Error( 'tmp', 'No se pudo escribir el archivo temporal llms.txt.' );
+    $files = [];
+    foreach ( array_merge( [ 'llms.txt' => $content ], $extra['attachments'] ?? [] ) as $fname => $body ) {
+        $path = $dir . '/' . sanitize_file_name( $fname );
+        if ( false === file_put_contents( $path, $body ) ) {
+            array_map( 'wp_delete_file', $files );
+            @rmdir( $dir );
+            return new WP_Error( 'tmp', "No se pudo escribir el archivo temporal $fname." );
+        }
+        $files[] = $path;
     }
 
     $host      = wp_parse_url( $website, PHP_URL_HOST ) ?: 'tudominio.com';
     $scheme    = wp_parse_url( $website, PHP_URL_SCHEME ) ?: 'https';
     $from_name = get_option( 'llmstxt_from_name', LLMSTXT_AUTHOR );
-    $subject   = 'Tu archivo llms.txt está listo — ' . $host;
+    $cta       = get_option( 'llmstxt_cta_url', '' );
+    $subject   = 'Tu kit de visibilidad en IA está listo — ' . $host;
     $message   = "Hola {$name},\n\n"
-               . "Tu archivo llms.txt para {$website} está listo. Lo encontrarás adjunto a este correo.\n\n"
-               . "Súbelo a la raíz de tu dominio para que quede disponible en:\n{$scheme}://{$host}/llms.txt\n\n"
-               . "— {$from_name}";
+               . "Tu kit de visibilidad en IA para {$website} está listo.\n\n"
+               . "== Tu archivo llms.txt (adjunto) ==\n"
+               . "Súbelo a la raíz de tu dominio para que quede disponible en:\n{$scheme}://{$host}/llms.txt\n"
+               . "Es un resumen de tu negocio pensado para asistentes de IA. Todavía pocos buscadores lo leen, así que úsalo como complemento: lo que más pesa son los datos estructurados y que tus datos sean coherentes.";
+    if ( ! empty( $extra['report'] ) ) $message .= "\n\n" . $extra['report'];
+    $message  .= "\n\n¿Quieres que te ayudemos a aplicarlo y a aparecer en las respuestas de la IA?"
+               . ( $cta ? "\nEscríbenos: " . ( 0 === strpos( $cta, '/' ) ? home_url( $cta ) : $cta ) : '' )
+               . "\n\n— {$from_name}";
 
     $mail_error = null;
     $transport  = null;
@@ -1209,11 +1264,11 @@ function llmstxt_send_to_user( $email, $name, $website, $content ) {
     };
     add_action( 'wp_mail_failed', $catch );
     add_action( 'phpmailer_init', $capture, PHP_INT_MAX );
-    $sent = wp_mail( $email, $subject, $message, llmstxt_mail_headers(), [ $file ] );
+    $sent = wp_mail( $email, $subject, $message, llmstxt_mail_headers(), $files );
     remove_action( 'phpmailer_init', $capture, PHP_INT_MAX );
     remove_action( 'wp_mail_failed', $catch );
 
-    @unlink( $file );
+    array_map( 'wp_delete_file', $files );
     @rmdir( $dir );
 
     $transport = $transport ?: [ 'to' => $email, 'mailer' => '(desconocido: wp_mail() reemplazado por un plugin)', 'host' => '', 'port' => 0, 'auth' => false, 'from' => '', 'sender' => '', 'time' => current_time( 'mysql' ) ];

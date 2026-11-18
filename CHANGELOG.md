@@ -1,5 +1,30 @@
 # Changelog — LLMs.txt Generator
 
+## 3.6.0
+**El generador pasa a ser un "kit de visibilidad en IA"** (`includes/report.php`). Junto al llms.txt, el email incluye ahora:
+
+1. **Datos estructurados (schema.org JSON-LD)**, como adjunto `datos-estructurados.txt` listo para pegar en el `<head>`.
+   - Se construye en el servidor con el nombre, la dirección, el teléfono, la web y los **perfiles** del negocio (`sameAs`).
+   - Una llamada corta a OpenAI (sin búsqueda web, salida JSON validada) elige el tipo más específico (por ejemplo `GeneralContractor` o `Dentist`, de una lista cerrada), escribe una descripción y separa la dirección en sus partes.
+   - Si esa llamada falla, se usa `LocalBusiness` con la dirección tal cual.
+2. **Revisión del robots.txt.** Aplica las reglas de RFC 9309 (grupos, regla más larga, empates a favor de Allow, `*` y `$`) a 13 bots:
+   - De búsqueda: `OAI-SearchBot`, `ChatGPT-User`, `Claude-SearchBot`, `Claude-User`, `PerplexityBot`, `Perplexity-User`, `Bingbot` y `Googlebot`.
+   - De entrenamiento: `GPTBot`, `ClaudeBot`, `Google-Extended`, `Applebot-Extended` y `CCBot`.
+   - Dice qué bots de búsqueda están bloqueados y qué líneas añadir. Los de entrenamiento se presentan como una decisión del dueño del sitio.
+3. **Coherencia del NAP.** Descarga hasta 8 de las páginas indicadas (con `wp_safe_remote_get`) y comprueba si el nombre, la dirección (por palabras significativas: "Cra." equivale a "Carrera") y el teléfono (enlaces `tel:` y texto, en cualquier formato) aparecen en cada una. Avisa de teléfonos distintos en enlaces `tel:`.
+
+Cada revisión es independiente: si una falla, el email sale sin esa sección. El informe se guarda en la columna `report`, y el schema se descarga desde *LLMs.txt Leads* con el botón **Schema**.
+
+**Formulario**
+- Campo opcional **Tus perfiles** en el paso 2 (uno por línea; se acepta sin `https://`; máximo 10). Se valida en el navegador y en el servidor.
+- Textos más precisos sobre lo que hace el kit: el llms.txt se presenta como complemento, porque todavía pocos buscadores lo leen.
+- **Más espacio arriba y abajo** del bloque, para que no quede pegado a los bloques vecinos (variables `--llms-space-top` y `--llms-space-bottom`).
+
+**Otros**
+- Asunto del email: "Tu kit de visibilidad en IA está listo". El cuerpo explica cada adjunto y termina con el enlace de contacto configurado.
+- El CSV y el exportador RGPD incluyen los perfiles.
+- `llmstxt_send_to_user()` acepta adjuntos e informe adicionales (sigue funcionando con 4 argumentos).
+
 ## 3.5.0
 **Nuevo diseño del formulario: "Asistente en 3 pasos"**, con el estilo de designsandit.com.
 - Una columna presenta el beneficio y una tarjeta con borde naranja y sombra sólida contiene el asistente en tres pasos: **Tú → Tu negocio → Tus páginas**, con indicador de progreso.

@@ -1,4 +1,4 @@
-# LLMs.txt Generator — Plugin WordPress (v3.5.0)
+# LLMs.txt Generator — Plugin WordPress (v3.6.0)
 
 Plugin de lead magnet. El visitante deja sus datos y las URLs de su sitio. El plugin genera un `llms.txt` con **OpenAI `gpt-5-mini` + búsqueda web** (la IA visita las URLs reales) y se lo envía por email como adjunto `llms.txt`.
 
@@ -8,6 +8,13 @@ Plugin de lead magnet. El visitante deja sus datos y las URLs de su sitio. El pl
 2. **Ajustes → LLMs.txt Generator**: API key de OpenAI, tu email de aviso y nombre/email del remitente (mejor un email de tu dominio).
 3. Pulsa **"Probar conexión con OpenAI"** en la sección Diagnóstico.
 4. Pon el shortcode `[llmstxt_generator]` en una página.
+
+## Qué recibe el visitante (kit de visibilidad en IA)
+
+- `llms.txt`: resumen del negocio para asistentes de IA, a partir de sus páginas reales.
+- `datos-estructurados.txt`: bloque schema.org JSON-LD (tipo de negocio, dirección, teléfono y perfiles en `sameAs`), listo para el `<head>`.
+- Revisión de su `robots.txt`: si ChatGPT, Claude, Perplexity, Bing y Google pueden leer la web, y qué cambiar si no.
+- Coherencia del NAP: si su nombre, dirección y teléfono aparecen igual en sus páginas.
 
 ## Cómo funciona
 
