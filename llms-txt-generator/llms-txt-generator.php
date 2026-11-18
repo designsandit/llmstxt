@@ -3,7 +3,7 @@
  * Plugin Name: LLMs.txt Generator
  * Plugin URI:  https://tusitio.com
  * Description: Genera archivos llms.txt para negocios usando IA (OpenAI GPT-5 mini + web search). Procesamiento asíncrono vía WP-Cron.
- * Version:     3.2.0
+ * Version:     3.3.0
  * Author:      Tu Agencia SEO
  * License:     GPL2
  * Text Domain: llms-txt-generator
@@ -13,7 +13,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'LLMSTXT_VERSION',       '3.2.0' );
+define( 'LLMSTXT_VERSION',       '3.3.0' );
 define( 'LLMSTXT_PLUGIN_DIR',    plugin_dir_path( __FILE__ ) );
 define( 'LLMSTXT_PLUGIN_URL',    plugin_dir_url( __FILE__ ) );
 define( 'LLMSTXT_RATE_LIMIT',    5 );     // envíos exitosos por IP…
@@ -54,6 +54,7 @@ function llmstxt_schema_columns() {
         'attempts'       => 'INT UNSIGNED NOT NULL DEFAULT 0',
         'created_at'     => 'DATETIME NULL',
         'updated_at'     => 'DATETIME NULL',
+        'llms_content'   => 'LONGTEXT NULL',  // último llms.txt generado (descargable desde el admin)
     ];
 }
 
@@ -213,6 +214,31 @@ add_action( 'admin_post_llmstxt_test_openai', function() {
     llmstxt_admin_redirect( 'settings', $ok ? 'success' : 'error', $msg );
 } );
 
+add_action( 'admin_post_llmstxt_download', function() {
+    llmstxt_check_admin_action( 'llmstxt_download' );
+    global $wpdb;
+    $lead_id = isset( $_GET['lead_id'] ) ? absint( $_GET['lead_id'] ) : 0;
+    $content = $wpdb->get_var( $wpdb->prepare( 'SELECT llms_content FROM ' . llmstxt_table() . ' WHERE id = %d', $lead_id ) );
+    if ( ! $content ) {
+        llmstxt_admin_redirect( 'llmstxt-leads', 'error', "El lead #$lead_id no tiene un llms.txt guardado. Pulsa \"Reprocesar\" para generarlo." );
+    }
+    nocache_headers();
+    header( 'Content-Type: text/plain; charset=UTF-8' );
+    header( 'Content-Disposition: attachment; filename="llms.txt"' );
+    echo $content; // texto plano descargado como archivo, no se renderiza como HTML
+    exit;
+} );
+
+add_action( 'admin_post_llmstxt_test_email', function() {
+    llmstxt_check_admin_action( 'llmstxt_test_email' );
+    $to     = wp_get_current_user()->user_email;
+    $result = llmstxt_send_to_user( $to, 'Administrador', home_url( '/' ), "# Prueba\n\n> Email de prueba del plugin LLMs.txt Generator.\n" );
+    if ( is_wp_error( $result ) ) {
+        llmstxt_admin_redirect( 'settings', 'error', 'El email de prueba falló: ' . $result->get_error_message() );
+    }
+    llmstxt_admin_redirect( 'settings', 'warning', "WordPress aceptó el email de prueba y lo pasó a tu servidor, dirigido a $to. Si en 5 minutos no está en tu bandeja ni en spam, tu servidor no está entregando los correos: configura SMTP (ver Diagnóstico → Email)." );
+} );
+
 add_action( 'admin_post_llmstxt_reprocess', function() {
     llmstxt_check_admin_action( 'llmstxt_reprocess' );
     $lead_id = isset( $_GET['lead_id'] ) ? absint( $_GET['lead_id'] ) : 0;
@@ -223,7 +249,7 @@ add_action( 'admin_post_llmstxt_reprocess', function() {
     if ( is_wp_error( $result ) ) {
         llmstxt_admin_redirect( 'llmstxt-leads', 'error', "Lead #$lead_id: " . $result->get_error_message() );
     }
-    llmstxt_admin_redirect( 'llmstxt-leads', 'success', "Lead #$lead_id procesado y email enviado." );
+    llmstxt_admin_redirect( 'llmstxt-leads', 'success', "Lead #$lead_id procesado. WordPress aceptó el email; si no llega, revisa spam y Diagnóstico → Email. El archivo se puede descargar con \"Descargar llms.txt\"." );
 } );
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -388,6 +414,19 @@ function llmstxt_settings_page() {
                     ? $warn . esc_html( $error_leads ) . ' — ver detalle en <a href="' . esc_url( admin_url( 'admin.php?page=llmstxt-leads' ) ) . '">LLMs.txt Leads</a>'
                     : $ok . 'Ninguno'; ?></td>
             </tr>
+            <?php $mail = llmstxt_mail_diagnostics(); ?>
+            <tr>
+                <td>Email: remitente</td>
+                <td><code><?php echo esc_html( $mail['from'] ); ?></code>
+                    <?php foreach ( $mail['from_warnings'] as $w ) echo '<br>' . $warn . esc_html( $w ); ?>
+                    <?php if ( empty( $mail['from_warnings'] ) ) echo $ok; ?></td>
+            </tr>
+            <tr>
+                <td>Email: método de envío</td>
+                <td><?php echo $mail['smtp']
+                    ? $ok . esc_html( $mail['smtp_detail'] )
+                    : $warn . 'WordPress envía con la función <code>mail()</code> del servidor, sin autenticación. Gmail, Outlook, etc. suelen descartar esos correos o mandarlos a spam. Instala <strong>WP Mail SMTP</strong> (o FluentSMTP) y conéctalo a tu correo del dominio, Brevo, SendGrid o Mailgun.'; ?></td>
+            </tr>
             <?php if ( $last_db_error ) : ?>
             <tr>
                 <td><strong>Último error de BD</strong></td>
@@ -399,6 +438,7 @@ function llmstxt_settings_page() {
         <p>
             <a href="<?php echo esc_url( llmstxt_action_url( 'llmstxt_repair_db' ) ); ?>" class="button button-primary">Reparar base de datos</a>
             <a href="<?php echo esc_url( llmstxt_action_url( 'llmstxt_test_openai' ) ); ?>" class="button">Probar conexión con OpenAI</a>
+            <a href="<?php echo esc_url( llmstxt_action_url( 'llmstxt_test_email' ) ); ?>" class="button">Enviarme un email de prueba</a>
             <a href="<?php echo esc_url( llmstxt_action_url( 'llmstxt_reset_ratelimit' ) ); ?>" class="button">Limpiar límite de intentos</a>
         </p>
         <p class="description">Los administradores conectados no tienen límite de intentos. Los errores detallados también se escriben en <code>wp-content/debug.log</code> si activas <code>WP_DEBUG_LOG</code>.</p>
@@ -447,7 +487,10 @@ function llmstxt_leads_page() {
                     <td><?php echo intval( $lead->attempts ); ?></td>
                     <td><?php echo esc_html( $lead->ip_address ?: '—' ); ?></td>
                     <td><?php echo esc_html( $lead->created_at ); ?></td>
-                    <td>
+                    <td style="white-space:nowrap">
+                        <?php if ( ! empty( $lead->llms_content ) ) : ?>
+                            <a class="button button-small" href="<?php echo esc_url( llmstxt_action_url( 'llmstxt_download', [ 'lead_id' => $lead->id ] ) ); ?>">Descargar llms.txt</a>
+                        <?php endif; ?>
                         <?php if ( empty( $lead->urls_submitted ) ) : ?>
                             <small>Sin URLs guardadas</small>
                         <?php else : ?>
@@ -675,6 +718,9 @@ function llmstxt_run_job( $lead_id, $force = false, $legacy_nap = '', $legacy_ur
         return llmstxt_fail_lead( $lead_id, $content );
     }
 
+    // Guardar el archivo antes de enviar: así se puede descargar desde el admin aunque el email no llegue.
+    $wpdb->update( $table, [ 'llms_content' => $content ], [ 'id' => $lead_id ] );
+
     $sent = llmstxt_send_to_user( $lead->email, $lead->name, $lead->website, $content );
     if ( is_wp_error( $sent ) ) {
         return llmstxt_fail_lead( $lead_id, $sent );
@@ -895,6 +941,41 @@ function llmstxt_get_ip() {
 // ═════════════════════════════════════════════════════════════════════════════
 // Emails
 // ═════════════════════════════════════════════════════════════════════════════
+
+/** Datos para el diagnóstico de email: remitente efectivo, avisos y si hay SMTP configurado. */
+function llmstxt_mail_diagnostics() {
+    $from = get_option( 'llmstxt_from_email' );
+    if ( ! is_email( $from ) ) $from = get_option( 'admin_email' );
+
+    $from_domain = strtolower( substr( strrchr( $from, '@' ), 1 ) );
+    $site_domain = strtolower( preg_replace( '/^www\./i', '', (string) wp_parse_url( home_url(), PHP_URL_HOST ) ) );
+    $free        = [ 'gmail.com', 'googlemail.com', 'hotmail.com', 'outlook.com', 'live.com', 'yahoo.com', 'icloud.com', 'aol.com', 'proton.me', 'protonmail.com' ];
+
+    $warnings = [];
+    if ( in_array( $from_domain, $free, true ) ) {
+        $warnings[] = "El remitente es una cuenta @$from_domain. Gmail y los demás rechazan los correos que dicen venir de @$from_domain pero salen de otro servidor (DMARC). Usa un email de tu dominio, por ejemplo info@$site_domain.";
+    } elseif ( $from_domain && $site_domain && $from_domain !== $site_domain && substr( $site_domain, -strlen( '.' . $from_domain ) ) !== '.' . $from_domain ) {
+        $warnings[] = "El dominio del remitente ($from_domain) no coincide con el del sitio ($site_domain). Asegúrate de que tu SMTP esté autorizado para enviar desde $from_domain.";
+    }
+
+    // Un plugin SMTP se engancha a phpmailer_init o reemplaza wp_mail() (función "pluggable").
+    $smtp   = false;
+    $detail = '';
+    if ( has_action( 'phpmailer_init' ) ) {
+        $smtp   = true;
+        $detail = 'Hay un plugin o configuración que modifica el envío (phpmailer_init). Si aun así no llegan, revisa el registro de envíos de ese plugin.';
+    } else {
+        try {
+            $file = ( new ReflectionFunction( 'wp_mail' ) )->getFileName();
+            if ( $file && false === strpos( wp_normalize_path( $file ), '/wp-includes/' ) ) {
+                $smtp   = true;
+                $detail = 'wp_mail() está reemplazado por un plugin (' . basename( dirname( $file ) ) . ').';
+            }
+        } catch ( ReflectionException $e ) {}
+    }
+
+    return [ 'from' => $from, 'from_warnings' => $warnings, 'smtp' => $smtp, 'smtp_detail' => $detail ];
+}
 
 function llmstxt_mail_headers( $content_type = true ) {
     $from_name  = get_option( 'llmstxt_from_name', 'Tu Agencia SEO' ) ?: get_bloginfo( 'name' );

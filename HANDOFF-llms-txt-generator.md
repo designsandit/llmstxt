@@ -1,7 +1,7 @@
 # Traspaso: Plugin WordPress "LLMs.txt Generator"
 
 Documento para continuar el trabajo en una charla nueva de Claude Code.
-Versión actual: **3.2.0** · Repositorio: `designsandit/llmstxt` · Rama de trabajo: `claude/fix-llms-txt-plugin-87rrD`
+Versión actual: **3.3.0** · Repositorio: `designsandit/llmstxt` · Rama de trabajo: `claude/fix-llms-txt-plugin-87rrD`
 
 ---
 
@@ -45,6 +45,8 @@ En noviembre de 2026 el repositorio se borró y se recreó. La v3.1.0 se reconst
 ---
 
 ## 3. Estado actual
+
+- **Prueba real (v3.2.0):** el flujo funcionó (lead #1, estado Enviado, 3 intentos), pero **el email no llegó a Gmail**. `wp_mail()` devolvió true, así que el fallo está en la entrega del servidor: falta SMTP o el remitente/DMARC no coincide. La v3.3.0 añade el diagnóstico de email, el email de prueba y la descarga del llms.txt desde el admin. Siguiente paso: configurar WP Mail SMTP con un remitente del dominio.
 
 - La v3.2.0 pasa `php -l` y las pruebas de funciones puras. **No se ha probado en WordPress real** (en el entorno de desarrollo no hay WordPress ni MySQL).
 - Hay que confirmar en el sitio real: que la migración añada `nap`, `error_message`, `attempts` y `updated_at`; que "Probar conexión con OpenAI" funcione; y el flujo completo formulario → email.

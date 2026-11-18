@@ -1,5 +1,13 @@
 # Changelog — LLMs.txt Generator
 
+## 3.3.0
+Para cuando un lead aparece como "Enviado" pero el correo no llega.
+
+- El llms.txt generado se guarda en la base de datos (nueva columna `llms_content`) y se puede **descargar** desde *LLMs.txt Leads* con el botón "Descargar llms.txt", aunque el email no haya llegado.
+- Diagnóstico → **Email**: muestra el remitente real. Avisa si es una cuenta gratuita (@gmail, @hotmail…), que Gmail rechaza por DMARC al enviarse desde otro servidor, o si su dominio no coincide con el del sitio. También dice si hay un plugin SMTP o si WordPress usa `mail()` del servidor.
+- Botón **"Enviarme un email de prueba"**: envía un correo con un llms.txt de prueba adjunto al email del administrador conectado.
+- El aviso de "Reprocesar" deja claro que "Enviado" significa que WordPress entregó el correo al servidor, no que haya llegado a la bandeja.
+
 ## 3.2.0
 Revisión completa del plugin en una sola pasada.
 

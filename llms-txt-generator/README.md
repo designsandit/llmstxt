@@ -1,4 +1,4 @@
-# LLMs.txt Generator — Plugin WordPress (v3.2.0)
+# LLMs.txt Generator — Plugin WordPress (v3.3.0)
 
 Plugin de lead magnet. El visitante deja sus datos y las URLs de su sitio. El plugin genera un `llms.txt` con **OpenAI `gpt-5-mini` + búsqueda web** (la IA visita las URLs reales) y se lo envía por email como adjunto `llms.txt`.
 
@@ -24,7 +24,7 @@ Muestra el estado de la base de datos (tabla y columnas), la API key, el modelo,
 
 - Límite: 5 envíos exitosos por IP y hora. Los administradores conectados no tienen límite.
 - El modelo se cambia en Ajustes (campo "Modelo de OpenAI") o con el filtro `llmstxt_openai_model`. El cuerpo de la petición se puede ajustar con el filtro `llmstxt_openai_payload`.
-- Si los emails no llegan, instala **WP Mail SMTP**. El motivo exacto aparece en la columna "Detalle" del lead.
+- Si los emails no llegan aunque el lead diga "Enviado", el servidor no los está entregando. Usa "Enviarme un email de prueba", revisa Diagnóstico → Email e instala **WP Mail SMTP** con un remitente de tu dominio. Mientras tanto, cada lead tiene el botón "Descargar llms.txt".
 - Si tu hosting tiene `DISABLE_WP_CRON`, configura un cron del sistema que llame a `https://tusitio.com/wp-cron.php` cada 1–5 minutos.
 - Los errores también se escriben en `wp-content/debug.log` (con `WP_DEBUG_LOG` activo), con el prefijo `[LLMs.txt Generator]`.
 
