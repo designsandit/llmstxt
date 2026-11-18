@@ -1,5 +1,8 @@
 # Changelog — LLMs.txt Generator
 
+## 3.4.2
+- Se quitan de `assets/style.css` los estilos que ya no se usaban (pantalla de carga, spinner, caja de resultado, botón secundario), restos de cuando el archivo se mostraba en pantalla. 265 → 198 líneas. El formulario se ve igual: comparado píxel a píxel en escritorio y móvil.
+
 ## 3.4.1
 - Corregido: la **primera vez** que se guardaba el token de GitHub no se borraba el resultado anterior de la comprobación, así que el Diagnóstico seguía mostrando el error 404 hasta una hora más.
 - Diagnóstico → Actualizaciones: indica si hay un token configurado (con sus 4 últimos caracteres) o si falta.

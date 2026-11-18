@@ -1,7 +1,7 @@
 # Traspaso: Plugin WordPress "LLMs.txt Generator"
 
 Documento para continuar el trabajo en una charla nueva de Claude Code.
-Versión actual: **3.4.1** · Repositorio: `designsandit/llmstxt` · Rama de trabajo: `claude/fix-llms-txt-plugin-87rrD`
+Versión actual: **3.4.2** · Repositorio: `designsandit/llmstxt` · Rama de trabajo: `claude/fix-llms-txt-plugin-87rrD`
 
 ---
 
@@ -61,11 +61,11 @@ En noviembre de 2026 el repositorio se borró y se recreó. La v3.1.0 se reconst
 
 ## 4. Pendientes
 
-1. **Probar la v3.4.0 en el sitio**: token de GitHub, "Buscar actualizaciones", exportar CSV y borrado. Las pruebas automáticas usan un WordPress simulado: aquí no se pudo instalar uno real.
+1. ~~Probar el actualizador~~: verificado en el sitio real (3.4.0 → 3.4.1 con "Actualizar ahora"). El repo ahora es **público**, así que no usa token.
 2. ~~Actualizaciones automáticas desde GitHub~~: hecho en la 3.4.0. La 3.3.1 → 3.4.0 se instala a mano y desde ahí es automático. Requiere el token de GitHub porque el repo es privado.
 3. ~~Borrar leads antiguos / privacidad~~ y ~~exportar CSV~~: hechos en la 3.4.0.
 4. Opcional: endurecer DMARC (`p=none` → `quarantine`).
-5. Opcional: quitar del CSS las clases que ya no se usan (`#llmstxt-step-loading`, `.llmstxt-result-box`, `.llmstxt-actions`).
+5. ~~Limpiar el CSS sin uso~~: hecho en la 3.4.2.
 
 ---
 
