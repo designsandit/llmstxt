@@ -1,7 +1,7 @@
 # Traspaso: Plugin WordPress "LLMs.txt Generator"
 
 Documento para continuar el trabajo en una charla nueva de Claude Code.
-Versión actual: **3.3.1** · Repositorio: `designsandit/llmstxt` · Rama de trabajo: `claude/fix-llms-txt-plugin-87rrD`
+Versión actual: **3.4.1** · Repositorio: `designsandit/llmstxt` · Rama de trabajo: `claude/fix-llms-txt-plugin-87rrD`
 
 ---
 
@@ -24,6 +24,8 @@ CHANGELOG.md, README.md, HANDOFF-llms-txt-generator.md
 **Esquema:** definido en `llmstxt_schema_columns()`. Es la única fuente de verdad y se usa en la creación, la migración y el diagnóstico. Columnas: `id, email, name, website, nap, urls_submitted, ip_address, status, error_message, attempts, created_at, updated_at`. El sitio real usa el prefijo `hRCkkY_`.
 
 **Opciones:** `llmstxt_openai_key`, `llmstxt_model`, `llmstxt_notify_email`, `llmstxt_from_name`, `llmstxt_from_email`, `llmstxt_cta_url`, `llmstxt_db_version`, `llmstxt_rl_gen` (generación del rate limit).
+
+**Publicar una versión:** merge a `main` con la versión subida y `dist/llms-txt-generator.zip` regenerado. Los sitios la reciben con el actualizador de `includes/updater.php`, que lee la versión de `llms-txt-generator/llms-txt-generator.php` en `main`.
 
 **Regla de versiones:** cualquier cambio sube la versión en la cabecera **y** en `LLMSTXT_VERSION`, porque `plugins_loaded` ejecuta `llmstxt_install_db()` cuando la versión cambia. Hay que añadir una entrada en `CHANGELOG.md` y regenerar el ZIP con `./build-zip.sh`.
 
@@ -59,10 +61,10 @@ En noviembre de 2026 el repositorio se borró y se recreó. La v3.1.0 se reconst
 
 ## 4. Pendientes
 
-1. **Probar la v3.2.0 en el sitio** y corregir lo que aparezca en Diagnóstico o en la columna "Detalle" de los leads.
-2. **Actualizaciones automáticas desde GitHub** (pendiente de que el usuario lo confirme): que WordPress muestre "nueva versión disponible" sin subir el ZIP a mano. El repo es privado, así que haría falta un token de solo lectura o publicar las releases en otro lugar. Opción habitual: la librería *Plugin Update Checker* (YahnisElsts).
-3. Opcional: borrar los leads antiguos / cumplir con privacidad (los datos personales se guardan sin caducidad).
-4. Opcional: exportar los leads a CSV.
+1. **Probar la v3.4.0 en el sitio**: token de GitHub, "Buscar actualizaciones", exportar CSV y borrado. Las pruebas automáticas usan un WordPress simulado: aquí no se pudo instalar uno real.
+2. ~~Actualizaciones automáticas desde GitHub~~: hecho en la 3.4.0. La 3.3.1 → 3.4.0 se instala a mano y desde ahí es automático. Requiere el token de GitHub porque el repo es privado.
+3. ~~Borrar leads antiguos / privacidad~~ y ~~exportar CSV~~: hechos en la 3.4.0.
+4. Opcional: endurecer DMARC (`p=none` → `quarantine`).
 5. Opcional: quitar del CSS las clases que ya no se usan (`#llmstxt-step-loading`, `.llmstxt-result-box`, `.llmstxt-actions`).
 
 ---

@@ -1,4 +1,4 @@
-# LLMs.txt Generator — Plugin WordPress (v3.3.0)
+# LLMs.txt Generator — Plugin WordPress (v3.4.1)
 
 Plugin de lead magnet. El visitante deja sus datos y las URLs de su sitio. El plugin genera un `llms.txt` con **OpenAI `gpt-5-mini` + búsqueda web** (la IA visita las URLs reales) y se lo envía por email como adjunto `llms.txt`.
 
@@ -18,7 +18,27 @@ Plugin de lead magnet. El visitante deja sus datos y las URLs de su sitio. El pl
 
 ## Diagnóstico (Ajustes → LLMs.txt Generator)
 
-Muestra el estado de la base de datos (tabla y columnas), la API key, el modelo, la última prueba de conexión, si WP-Cron está desactivado, los trabajos atrasados y los leads con error. Botones: **Reparar base de datos**, **Probar conexión con OpenAI** y **Limpiar límite de intentos**.
+Muestra el estado de la base de datos (tabla y columnas), la API key, el modelo, la última prueba de conexión, si WP-Cron está desactivado, los trabajos atrasados y los leads con error. También muestra el estado del envío de email, de las actualizaciones y de la retención de leads. Botones: **Reparar base de datos**, **Probar conexión con OpenAI**, **Enviarme un email de prueba**, **Limpiar límite de intentos** y **Buscar actualizaciones**.
+
+## Actualizaciones automáticas (desde GitHub)
+
+El plugin se actualiza desde el repositorio `designsandit/llmstxt`, rama `main`.
+
+1. **Si el repositorio es privado**, crea un token en https://github.com/settings/personal-access-tokens/new:
+   - *Repository access* → **Only select repositories** → `llmstxt`.
+   - *Permissions* → *Repository permissions* → **Contents: Read-only**.
+   - Pégalo en Ajustes → LLMs.txt Generator → **Token de GitHub**. También puedes definirlo en `wp-config.php` con `define( 'LLMSTXT_GITHUB_TOKEN', '...' );`.
+   - El token caduca en la fecha que elijas. Cuando caduque, el Diagnóstico mostrará un error 401: crea uno nuevo y pégalo.
+2. Pulsa **"Buscar actualizaciones"** en el Diagnóstico para comprobar la conexión.
+3. En **Plugins**, pulsa **"Activar actualizaciones automáticas"** en LLMs.txt Generator para que se instalen solas. Si no, aparecerá "Actualizar ahora".
+
+Se publica una versión nueva cuando llega a `main` un commit que sube la versión del plugin y regenera `dist/llms-txt-generator.zip`.
+
+## Leads y privacidad
+
+- *LLMs.txt Leads* → **Exportar todos a CSV**, **Borrar** un lead o **Borrar leads con más de N días**.
+- Ajustes → **Borrar leads automáticamente después de N días** (`0` = nunca).
+- Las solicitudes de acceso o borrado de datos (RGPD) se atienden desde **Herramientas → Exportar datos personales / Borrar datos personales**, buscando por email.
 
 ## Notas
 

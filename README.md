@@ -13,6 +13,8 @@ Luego, en WordPress: Plugins → Añadir nuevo → Subir plugin → selecciona e
 ```
 llms-txt-generator/        ← código fuente del plugin (lo que se edita)
   llms-txt-generator.php
+  includes/updater.php     ← actualizaciones desde GitHub
+  includes/privacy.php     ← CSV, borrado de leads, RGPD
   assets/app.js
   assets/style.css
   README.md                ← documentación del plugin
@@ -28,3 +30,4 @@ HANDOFF-llms-txt-generator.md ← contexto para continuar en una charla nueva de
 2. Sube la versión en la cabecera del plugin **y** en la constante `LLMSTXT_VERSION`. Con eso se ejecuta la migración de la base de datos.
 3. Añade una entrada en `CHANGELOG.md`.
 4. Ejecuta `./build-zip.sh` y haz commit también de `dist/llms-txt-generator.zip`.
+5. Cuando el cambio llega a `main` (merge del PR), los WordPress con el plugin instalado lo detectan como actualización. Con las actualizaciones automáticas activadas, se instala solo.
