@@ -1,5 +1,26 @@
 # Changelog — LLMs.txt Generator
 
+## 3.6.1
+Mejoras a partir del primer kit real generado con OpenAI. El schema salió bien: `ProfessionalService`, con descripción y país.
+
+**llms.txt**
+- Nuevo `llmstxt_normalize_llms()`: corrige el archivo antes de guardarlo y enviarlo, aunque el modelo no siga el formato.
+  - `- Título (URL): texto` pasa a `- [Título](URL): texto`, el formato de enlace de llmstxt.org.
+  - Los enlaces repetidos se quitan. La comparación ignora `www.` y la barra final. Fuera de "Optional" se conserva la descripción como texto, así no se pierde, por ejemplo, la cobertura geográfica.
+  - Se eliminan las secciones que quedan vacías, los espacios al final de línea y las líneas en blanco de más.
+- Instrucción reescrita:
+  - Encabezados y etiquetas **en el idioma del negocio** (`## Servicios`, `## Zonas de servicio`, `## Sobre nosotros`, `## Contacto`…). `## Optional` se mantiene siempre, porque es una palabra clave del estándar.
+  - Formato de enlace obligatorio, con ejemplo.
+  - Cada URL una sola vez.
+  - Zonas de servicio como lista de lugares, sin enlaces.
+
+**Ciudad**
+- Campo **Ciudad** obligatorio en el paso 2 (columna `city`). Se añade a la dirección del NAP si no está ya escrita en ella.
+- En el schema va como `addressLocality`: se le indica a la IA y, si la IA falla, se usa como respaldo. La comprobación del NAP busca la calle sin la ciudad.
+
+**Formulario**
+- Cuando hay un campo con error, la página lo muestra con su etiqueta, por debajo de la cabecera fija del tema. Antes podía quedar tapado.
+
 ## 3.6.0
 **El generador pasa a ser un "kit de visibilidad en IA"** (`includes/report.php`). Junto al llms.txt, el email incluye ahora:
 

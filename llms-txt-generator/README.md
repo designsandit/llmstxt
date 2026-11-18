@@ -1,4 +1,4 @@
-# LLMs.txt Generator — Plugin WordPress (v3.6.0)
+# LLMs.txt Generator — Plugin WordPress (v3.6.1)
 
 Plugin de lead magnet. El visitante deja sus datos y las URLs de su sitio. El plugin genera un `llms.txt` con **OpenAI `gpt-5-mini` + búsqueda web** (la IA visita las URLs reales) y se lo envía por email como adjunto `llms.txt`.
 

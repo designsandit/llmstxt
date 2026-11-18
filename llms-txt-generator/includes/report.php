@@ -269,12 +269,13 @@ function llmstxt_schema_types() {
  * Pide a OpenAI (sin búsqueda web, salida JSON validada) el tipo de negocio, una descripción y
  * la dirección separada en partes, a partir del llms.txt ya generado. @return array|WP_Error
  */
-function llmstxt_schema_ai( $biz, $address, $website, $llms_content ) {
+function llmstxt_schema_ai( $biz, $address, $website, $llms_content, $city = '' ) {
     $api_key = get_option( 'llmstxt_openai_key' );
     if ( ! $api_key ) return new WP_Error( 'no_key', 'Sin API key.' );
 
     $model   = llmstxt_get_model();
-    $prompt  = "Business name: {$biz}\nWebsite: {$website}\nAddress as written by the owner: {$address}\n\n"
+    $prompt  = "Business name: {$biz}\nWebsite: {$website}\nAddress as written by the owner: {$address}\n"
+             . ( '' !== $city ? "City (given by the owner, use it as address_locality): {$city}\n" : '' ) . "\n"
              . "llms.txt generated from the business website:\n---\n" . mb_substr( (string) $llms_content, 0, 6000 ) . "\n---\n\n"
              . "Return data for a schema.org JSON-LD block:\n"
              . "- schema_type: the most specific type from the list that fits the business.\n"
@@ -317,8 +318,8 @@ function llmstxt_schema_ai( $biz, $address, $website, $llms_content ) {
 }
 
 /** Construye el schema. Si la IA no responde, usa LocalBusiness con la dirección tal cual. */
-function llmstxt_build_schema( $biz, $address, $phone, $website, array $profiles, $llms_content ) {
-    $ai     = llmstxt_schema_ai( $biz, $address, $website, $llms_content );
+function llmstxt_build_schema( $biz, $address, $phone, $website, array $profiles, $llms_content, $city = '' ) {
+    $ai     = llmstxt_schema_ai( $biz, $address, $website, $llms_content, $city );
     $use_ai = ! is_wp_error( $ai );
     if ( ! $use_ai ) llmstxt_log( 'Schema sin IA: ' . $ai->get_error_message() );
 
@@ -331,6 +332,7 @@ function llmstxt_build_schema( $biz, $address, $phone, $website, array $profiles
         }
     }
     if ( empty( $postal['streetAddress'] ) ) $postal['streetAddress'] = $address;
+    if ( empty( $postal['addressLocality'] ) && '' !== $city ) $postal['addressLocality'] = $city;
 
     $schema = [
         '@context'  => 'https://schema.org',
@@ -362,15 +364,18 @@ function llmstxt_build_report( $lead, $llms_content ) {
     $urls     = array_values( array_filter( array_map( 'trim', preg_split( '/\R/', (string) $lead->urls_submitted ) ) ) );
     $profiles = llmstxt_parse_profiles( $lead->profiles ?? '' );
     $report   = [ 'generated' => current_time( 'mysql' ), 'schema' => null, 'robots' => null, 'nap' => null ];
+    $city     = trim( (string) ( $lead->city ?? '' ) );
+    // Dirección sin la ciudad que se le añadió al guardar: la ciudad va aparte en el schema.
+    $street   = ( '' !== $city && substr( $nap['address'], -strlen( ', ' . $city ) ) === ', ' . $city ) ? substr( $nap['address'], 0, -strlen( ', ' . $city ) ) : $nap['address'];
 
     try {
-        $report['schema'] = llmstxt_build_schema( $nap['biz'], $nap['address'], $nap['phone'], $lead->website, $profiles, $llms_content );
+        $report['schema'] = llmstxt_build_schema( $nap['biz'], $street, $nap['phone'], $lead->website, $profiles, $llms_content, $city );
     } catch ( Throwable $e ) { llmstxt_log( 'Schema: ' . $e->getMessage() ); }
     try {
         $report['robots'] = llmstxt_check_robots( $lead->website );
     } catch ( Throwable $e ) { llmstxt_log( 'robots.txt: ' . $e->getMessage() ); }
     try {
-        if ( $urls ) $report['nap'] = llmstxt_check_nap( $urls, $nap['biz'], $nap['address'], $nap['phone'] );
+        if ( $urls ) $report['nap'] = llmstxt_check_nap( $urls, $nap['biz'], $street, $nap['phone'] );
     } catch ( Throwable $e ) { llmstxt_log( 'NAP: ' . $e->getMessage() ); }
 
     return $report;
