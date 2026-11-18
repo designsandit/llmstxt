@@ -46,6 +46,9 @@ En noviembre de 2026 el repositorio se borró y se recreó. La v3.1.0 se reconst
 
 ## 3. Estado actual
 
+- ✅ **Funciona de punta a punta (v3.3.1, 17-nov-2026):** al reprocesar el lead #1 se generó el llms.txt y el email llegó. La entrega se resolvió configurando **WP Mail SMTP by WPForms** con "Otro SMTP": `smtp.gmail.com:465` SSL, usuario `info@designsandit.com` con contraseña de aplicación. El correo del dominio está en Google Workspace. Con `mail()` del servidor, Google descartaba los correos.
+- Pendiente opcional: endurecer la política DMARC (hoy `p=none`).
+
 - **Prueba real (v3.2.0):** el flujo funcionó (lead #1, estado Enviado, 3 intentos), pero **el email no llegó a Gmail**. `wp_mail()` devolvió true, así que el fallo está en la entrega del servidor: falta SMTP o el remitente/DMARC no coincide. La v3.3.0 añade el diagnóstico de email, el email de prueba y la descarga del llms.txt desde el admin. Siguiente paso: configurar WP Mail SMTP con un remitente del dominio.
 - **Prueba v3.3.0:** el Diagnóstico mostró remitente `info@designsandit.com` ✓ y "un plugin modifica el envío", pero el email de prueba tampoco llegó. La v3.3.1 muestra la vía real del último envío (SMTP host:puerto o mail()) y qué plugins intervienen.
 
