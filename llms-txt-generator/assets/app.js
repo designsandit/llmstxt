@@ -1,5 +1,7 @@
-/* LLMs.txt Generator — Frontend JS v3.0 */
+/* LLMs.txt Generator — Frontend JS v3.2 */
 jQuery(function ($) {
+
+    var BTN_LABEL = 'Generar mi llms.txt gratis →';
 
     $('#llmstxt-lead-form').on('submit', function (e) {
         e.preventDefault();
@@ -19,7 +21,7 @@ jQuery(function ($) {
             return;
         }
         if (!isValidUrl(website)) {
-            showError('Ingresa una URL válida (ej: https://tusitio.com).');
+            showError('Ingresa una URL válida que empiece con https:// (ej: https://tusitio.com).');
             return;
         }
 
@@ -35,13 +37,13 @@ jQuery(function ($) {
             email:   email,
             website: website,
             nap:     nap,
-            urls:    urls,
+            urls:    urls
         })
         .done(function (response) {
-            if (response.success) {
+            if (response && response.success) {
                 $('#llmstxt-success-msg').text(
                     'Estamos analizando tu sitio. Recibirás el archivo en ' +
-                    response.data.email + ' en los próximos 1-3 minutos.'
+                    response.data.email + ' en los próximos 1-3 minutos. Revisa también la carpeta de spam.'
                 );
                 $('#llmstxt-step-lead').hide();
                 $('#llmstxt-step-success').show();
@@ -49,16 +51,26 @@ jQuery(function ($) {
                     scrollTop: $('#llmstxt-step-success').offset().top - 40
                 }, 400);
             } else {
-                showError(response.data.message || 'Ocurrió un error. Intenta nuevamente.');
-                $btn.prop('disabled', false).text('Generar mi llms.txt gratis →');
+                showError(messageFrom(response) || 'Ocurrió un error. Intenta nuevamente.');
+                resetButton($btn);
             }
         })
-        .fail(function () {
-            showError('Error de conexión. Revisa tu internet e intenta nuevamente.');
-            $btn.prop('disabled', false).text('Generar mi llms.txt gratis →');
+        .fail(function (xhr) {
+            var msg = messageFrom(xhr.responseJSON);
+            if (!msg && xhr.status === 403) {
+                msg = 'La página lleva demasiado tiempo abierta. Recárgala e inténtalo de nuevo.';
+            }
+            showError(msg || 'Error de conexión. Revisa tu internet e intenta nuevamente.');
+            resetButton($btn);
         });
     });
 
+    function messageFrom(response) {
+        return response && response.data && response.data.message ? response.data.message : '';
+    }
+    function resetButton($btn) {
+        $btn.prop('disabled', false).text(BTN_LABEL);
+    }
     function showError(msg) {
         $('#llmstxt-lead-error').text(msg).show();
     }
@@ -69,7 +81,12 @@ jQuery(function ($) {
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
     }
     function isValidUrl(url) {
-        try { new URL(url); return true; } catch (_) { return false; }
+        try {
+            var u = new URL(url);
+            return u.protocol === 'http:' || u.protocol === 'https:';
+        } catch (_) {
+            return false;
+        }
     }
 
 });

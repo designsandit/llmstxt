@@ -3,91 +3,267 @@
  * Plugin Name: LLMs.txt Generator
  * Plugin URI:  https://tusitio.com
  * Description: Genera archivos llms.txt para negocios usando IA (OpenAI GPT-5 mini + web search). Procesamiento asíncrono vía WP-Cron.
- * Version:     3.1.0
+ * Version:     3.2.0
  * Author:      Tu Agencia SEO
  * License:     GPL2
  * Text Domain: llms-txt-generator
+ * Requires at least: 6.0
+ * Requires PHP: 7.4
  */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'LLMSTXT_VERSION',    '3.1.0' );
-define( 'LLMSTXT_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
-define( 'LLMSTXT_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'LLMSTXT_RATE_LIMIT',  5 );
-define( 'LLMSTXT_RATE_WINDOW', 3600 );
-define( 'LLMSTXT_MAX_URLS',    20 );
-define( 'LLMSTXT_MAX_FIELD',   500 );
+define( 'LLMSTXT_VERSION',       '3.2.0' );
+define( 'LLMSTXT_PLUGIN_DIR',    plugin_dir_path( __FILE__ ) );
+define( 'LLMSTXT_PLUGIN_URL',    plugin_dir_url( __FILE__ ) );
+define( 'LLMSTXT_RATE_LIMIT',    5 );     // envíos exitosos por IP…
+define( 'LLMSTXT_RATE_WINDOW',   3600 );  // …por esta ventana (segundos)
+define( 'LLMSTXT_MAX_URLS',      20 );
+define( 'LLMSTXT_MAX_FIELD',     500 );
+define( 'LLMSTXT_DEFAULT_MODEL', 'gpt-5-mini' );
+define( 'LLMSTXT_API_TIMEOUT',   240 );   // segundos de espera a OpenAI
+define( 'LLMSTXT_CRON_HOOK',     'llmstxt_process_job' );
 
-// ─── Activation ──────────────────────────────────────────────────────────────
-register_activation_hook( __FILE__, 'llmstxt_activate' );
-function llmstxt_activate() {
+function llmstxt_log( $message ) {
+    error_log( '[LLMs.txt Generator] ' . $message );
+}
+
+function llmstxt_table() {
     global $wpdb;
-    $table   = $wpdb->prefix . 'llmstxt_leads';
-    $charset = $wpdb->get_charset_collate();
-    $sql = "CREATE TABLE IF NOT EXISTS $table (
-        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-        email VARCHAR(255) NOT NULL,
-        name VARCHAR(255),
-        website VARCHAR(500),
-        urls_submitted TEXT,
-        ip_address VARCHAR(45),
-        status VARCHAR(20) DEFAULT 'pending',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    ) $charset;";
-    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-    dbDelta( $sql );
+    return $wpdb->prefix . 'llmstxt_leads';
+}
 
-    // dbDelta no añade columnas en tablas existentes de forma confiable.
-    // Verificar y añadir cada columna requerida con ALTER TABLE explícito.
-    $existing_cols = $wpdb->get_col( "DESCRIBE $table", 0 ) ?: [];
-    $migrations = [
-        'ip_address' => "ALTER TABLE $table ADD COLUMN ip_address VARCHAR(45) AFTER urls_submitted",
-        'status'     => "ALTER TABLE $table ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending' AFTER ip_address",
+// ═════════════════════════════════════════════════════════════════════════════
+// Base de datos: instalación y migraciones
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Única fuente de verdad del esquema: columna => definición SQL.
+ * Se usa para crear la tabla, para añadir columnas faltantes y en el diagnóstico.
+ */
+function llmstxt_schema_columns() {
+    return [
+        'email'          => "VARCHAR(255) NOT NULL DEFAULT ''",
+        'name'           => 'VARCHAR(255) NULL',
+        'website'        => 'VARCHAR(500) NULL',
+        'nap'            => 'TEXT NULL',
+        'urls_submitted' => 'TEXT NULL',
+        'ip_address'     => 'VARCHAR(45) NULL',
+        'status'         => "VARCHAR(20) NOT NULL DEFAULT 'pending'",
+        'error_message'  => 'TEXT NULL',
+        'attempts'       => 'INT UNSIGNED NOT NULL DEFAULT 0',
+        'created_at'     => 'DATETIME NULL',
+        'updated_at'     => 'DATETIME NULL',
     ];
-    foreach ( $migrations as $col => $sql_alter ) {
-        if ( ! in_array( $col, $existing_cols, true ) ) {
-            $r = $wpdb->query( $sql_alter );
-            error_log( '[LLMs.txt Generator] ALTER TABLE ' . $col . ': ' . ( $r !== false ? 'OK' : 'FAILED — ' . $wpdb->last_error ) );
+}
+
+function llmstxt_table_exists() {
+    global $wpdb;
+    $table = llmstxt_table();
+    return $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) ) === $table;
+}
+
+function llmstxt_missing_columns() {
+    global $wpdb;
+    if ( ! llmstxt_table_exists() ) {
+        return array_keys( llmstxt_schema_columns() );
+    }
+    $existing = $wpdb->get_col( 'DESCRIBE ' . llmstxt_table(), 0 ) ?: [];
+    return array_values( array_diff( array_keys( llmstxt_schema_columns() ), $existing ) );
+}
+
+/**
+ * Crea la tabla si no existe y añade cualquier columna que falte.
+ * No usa dbDelta: en esta instalación demostró no añadir columnas a tablas existentes.
+ * Devuelve la lista de errores (vacía si todo fue bien).
+ */
+function llmstxt_install_db() {
+    global $wpdb;
+    $table   = llmstxt_table();
+    $errors  = [];
+    $columns = llmstxt_schema_columns();
+
+    if ( ! llmstxt_table_exists() ) {
+        $defs = [ 'id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT' ];
+        foreach ( $columns as $col => $def ) {
+            $defs[] = "`$col` $def";
+        }
+        $defs[] = 'PRIMARY KEY (id)';
+        $sql    = "CREATE TABLE IF NOT EXISTS `$table` (\n" . implode( ",\n", $defs ) . "\n) " . $wpdb->get_charset_collate();
+        if ( false === $wpdb->query( $sql ) ) {
+            $errors[] = 'CREATE TABLE: ' . $wpdb->last_error;
         }
     }
 
-    // Limpiar transient de error anterior al migrar
-    delete_transient( 'llmstxt_last_db_error' );
-    update_option( 'llmstxt_db_version', LLMSTXT_VERSION );
-}
-
-// Garantiza que la tabla exista aunque el hook de activación no haya corrido
-add_action( 'plugins_loaded', 'llmstxt_maybe_create_table' );
-function llmstxt_maybe_create_table() {
-    if ( get_option( 'llmstxt_db_version' ) !== LLMSTXT_VERSION ) {
-        llmstxt_activate();
+    foreach ( llmstxt_missing_columns() as $col ) {
+        if ( ! llmstxt_table_exists() ) break;
+        $r = $wpdb->query( "ALTER TABLE `$table` ADD COLUMN `$col` {$columns[ $col ]}" );
+        if ( false === $r ) {
+            $errors[] = "ALTER TABLE $col: " . $wpdb->last_error;
+        }
     }
+
+    foreach ( $errors as $e ) {
+        llmstxt_log( $e );
+    }
+
+    if ( empty( $errors ) ) {
+        update_option( 'llmstxt_db_version', LLMSTXT_VERSION );
+        delete_transient( 'llmstxt_last_db_error' );
+    } else {
+        set_transient( 'llmstxt_last_db_error', implode( ' | ', $errors ), DAY_IN_SECONDS );
+    }
+    return $errors;
 }
 
-// ─── Admin menu ──────────────────────────────────────────────────────────────
-add_action( 'admin_menu', 'llmstxt_admin_menu' );
-function llmstxt_admin_menu() {
+register_activation_hook( __FILE__, 'llmstxt_install_db' );
+
+// Migra automáticamente cuando cambia la versión (también si el hook de activación no corrió).
+add_action( 'plugins_loaded', function() {
+    if ( get_option( 'llmstxt_db_version' ) !== LLMSTXT_VERSION ) {
+        llmstxt_install_db();
+    }
+} );
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Ajustes
+// ═════════════════════════════════════════════════════════════════════════════
+
+function llmstxt_get_model() {
+    $model = trim( (string) get_option( 'llmstxt_model', LLMSTXT_DEFAULT_MODEL ) );
+    return apply_filters( 'llmstxt_openai_model', '' !== $model ? $model : LLMSTXT_DEFAULT_MODEL );
+}
+
+add_action( 'admin_menu', function() {
     add_options_page( 'LLMs.txt Generator', 'LLMs.txt Generator', 'manage_options', 'llmstxt-settings', 'llmstxt_settings_page' );
     add_menu_page( 'LLMs.txt Leads', 'LLMs.txt Leads', 'manage_options', 'llmstxt-leads', 'llmstxt_leads_page', 'dashicons-email-alt', 30 );
-}
+} );
 
-// ─── Settings ────────────────────────────────────────────────────────────────
-add_action( 'admin_init', 'llmstxt_register_settings' );
-function llmstxt_register_settings() {
+add_action( 'admin_init', function() {
     register_setting( 'llmstxt_options', 'llmstxt_openai_key',   [ 'sanitize_callback' => 'sanitize_text_field' ] );
+    register_setting( 'llmstxt_options', 'llmstxt_model',        [ 'sanitize_callback' => function( $v ) {
+        $v = sanitize_text_field( $v );
+        return '' !== $v ? $v : LLMSTXT_DEFAULT_MODEL;
+    } ] );
     register_setting( 'llmstxt_options', 'llmstxt_notify_email', [ 'sanitize_callback' => 'sanitize_email' ] );
     register_setting( 'llmstxt_options', 'llmstxt_from_name',    [ 'sanitize_callback' => 'sanitize_text_field' ] );
     register_setting( 'llmstxt_options', 'llmstxt_from_email',   [ 'sanitize_callback' => 'sanitize_email' ] );
+    register_setting( 'llmstxt_options', 'llmstxt_cta_url',      [ 'sanitize_callback' => 'esc_url_raw' ] );
+} );
+
+// Si el campo de la API key se deja vacío al guardar, conservar la existente.
+add_filter( 'pre_update_option_llmstxt_openai_key', function( $new, $old ) {
+    return ( '' === trim( (string) $new ) ) ? $old : $new;
+}, 10, 2 );
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Acciones de administración (admin-post.php, con nonce)
+// ═════════════════════════════════════════════════════════════════════════════
+
+function llmstxt_action_url( $action, $args = [] ) {
+    $url = add_query_arg( array_merge( [ 'action' => $action ], $args ), admin_url( 'admin-post.php' ) );
+    return wp_nonce_url( $url, $action );
 }
 
-add_filter( 'pre_update_option_llmstxt_openai_key', function( $new, $old ) {
-    return ( '' === trim( $new ) ) ? $old : $new;
-}, 10, 2 );
+function llmstxt_admin_redirect( $page, $type, $message ) {
+    set_transient( 'llmstxt_notice_' . get_current_user_id(), [ 'type' => $type, 'message' => $message ], 60 );
+    wp_safe_redirect( admin_url( 'llmstxt-leads' === $page ? 'admin.php?page=llmstxt-leads' : 'options-general.php?page=llmstxt-settings' ) );
+    exit;
+}
+
+function llmstxt_check_admin_action( $action ) {
+    if ( ! current_user_can( 'manage_options' ) ) wp_die( 'No autorizado.', 403 );
+    check_admin_referer( $action );
+}
+
+add_action( 'admin_notices', function() {
+    $key    = 'llmstxt_notice_' . get_current_user_id();
+    $notice = get_transient( $key );
+    if ( ! $notice ) return;
+    delete_transient( $key );
+    printf(
+        '<div class="notice notice-%s is-dismissible"><p><strong>LLMs.txt Generator:</strong> %s</p></div>',
+        esc_attr( $notice['type'] ),
+        esc_html( $notice['message'] )
+    );
+} );
+
+add_action( 'admin_post_llmstxt_repair_db', function() {
+    llmstxt_check_admin_action( 'llmstxt_repair_db' );
+    $errors = llmstxt_install_db();
+    if ( $errors ) {
+        llmstxt_admin_redirect( 'settings', 'error', 'No se pudo reparar la base de datos: ' . implode( ' | ', $errors ) );
+    }
+    llmstxt_admin_redirect( 'settings', 'success', 'Base de datos verificada: la tabla y todas las columnas están en orden.' );
+} );
+
+add_action( 'admin_post_llmstxt_reset_ratelimit', function() {
+    llmstxt_check_admin_action( 'llmstxt_reset_ratelimit' );
+    // Cambiar la "generación" invalida todos los contadores (funciona también con caché de objetos).
+    update_option( 'llmstxt_rl_gen', (int) get_option( 'llmstxt_rl_gen', 1 ) + 1, false );
+    llmstxt_admin_redirect( 'settings', 'success', 'Límite de intentos reiniciado para todas las IPs.' );
+} );
+
+add_action( 'admin_post_llmstxt_test_openai', function() {
+    llmstxt_check_admin_action( 'llmstxt_test_openai' );
+    $result = llmstxt_test_openai();
+    $ok     = ! is_wp_error( $result );
+    $msg    = $ok ? 'Conexión correcta con OpenAI. Modelo "' . llmstxt_get_model() . '" disponible.' : $result->get_error_message();
+    set_transient( 'llmstxt_last_api_test', [ 'ok' => $ok, 'message' => $msg, 'time' => current_time( 'mysql' ) ], WEEK_IN_SECONDS );
+    llmstxt_admin_redirect( 'settings', $ok ? 'success' : 'error', $msg );
+} );
+
+add_action( 'admin_post_llmstxt_reprocess', function() {
+    llmstxt_check_admin_action( 'llmstxt_reprocess' );
+    $lead_id = isset( $_GET['lead_id'] ) ? absint( $_GET['lead_id'] ) : 0;
+    if ( ! $lead_id ) llmstxt_admin_redirect( 'llmstxt-leads', 'error', 'Lead no válido.' );
+
+    // Se procesa en esta misma petición (no depende de WP-Cron).
+    $result = llmstxt_run_job( $lead_id, true );
+    if ( is_wp_error( $result ) ) {
+        llmstxt_admin_redirect( 'llmstxt-leads', 'error', "Lead #$lead_id: " . $result->get_error_message() );
+    }
+    llmstxt_admin_redirect( 'llmstxt-leads', 'success', "Lead #$lead_id procesado y email enviado." );
+} );
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Página de ajustes + diagnóstico
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** Devuelve [total, atrasados] de trabajos del plugin en la cola de WP-Cron. */
+function llmstxt_cron_queue_stats() {
+    $total = 0;
+    $late  = 0;
+    if ( ! function_exists( '_get_cron_array' ) ) return [ 0, 0 ];
+    foreach ( (array) _get_cron_array() as $timestamp => $hooks ) {
+        if ( isset( $hooks[ LLMSTXT_CRON_HOOK ] ) ) {
+            $n      = count( $hooks[ LLMSTXT_CRON_HOOK ] );
+            $total += $n;
+            if ( $timestamp < time() - 5 * MINUTE_IN_SECONDS ) $late += $n;
+        }
+    }
+    return [ $total, $late ];
+}
 
 function llmstxt_settings_page() {
     if ( ! current_user_can( 'manage_options' ) ) wp_die( 'No autorizado.' );
-    $has_key = ! empty( get_option( 'llmstxt_openai_key' ) );
+    global $wpdb;
+
+    $has_key       = ! empty( get_option( 'llmstxt_openai_key' ) );
+    $table_exists  = llmstxt_table_exists();
+    $missing_cols  = llmstxt_missing_columns();
+    $db_version    = get_option( 'llmstxt_db_version', '(no guardada)' );
+    $last_db_error = get_transient( 'llmstxt_last_db_error' );
+    $last_api_test = get_transient( 'llmstxt_last_api_test' );
+    $cron_disabled = defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
+    list( $queued, $late ) = llmstxt_cron_queue_stats();
+    $error_leads   = $table_exists && ! in_array( 'status', $missing_cols, true )
+        ? (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . llmstxt_table() . " WHERE status = 'error'" )
+        : 0;
+
+    $ok   = '<span style="color:#16a34a;font-weight:bold">✓</span> ';
+    $fail = '<span style="color:#dc2626;font-weight:bold">✗</span> ';
+    $warn = '<span style="color:#d97706;font-weight:bold">⚠</span> ';
     ?>
     <div class="wrap">
         <h1>LLMs.txt Generator — Configuración</h1>
@@ -95,160 +271,194 @@ function llmstxt_settings_page() {
             <?php settings_fields( 'llmstxt_options' ); ?>
             <table class="form-table">
                 <tr>
-                    <th>API Key de OpenAI</th>
+                    <th><label for="llmstxt_openai_key">API Key de OpenAI</label></th>
                     <td>
-                        <input type="password" name="llmstxt_openai_key" value=""
-                               placeholder="<?php echo $has_key ? '(configurada — pega una nueva para cambiarla)' : 'sk-proj-...'; ?>"
+                        <input type="password" id="llmstxt_openai_key" name="llmstxt_openai_key" value=""
+                               placeholder="<?php echo $has_key ? esc_attr( '(configurada — pega una nueva para cambiarla)' ) : 'sk-proj-...'; ?>"
                                class="regular-text" autocomplete="new-password" />
                         <p class="description">
-                            <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com/api-keys</a>.
-                            Modelo: <strong>gpt-5-mini</strong> con web search.
+                            Obtenla en <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com/api-keys</a>.
                             <?php if ( $has_key ) echo '<br><span style="color:#16a34a">✓ Key configurada.</span>'; ?>
                         </p>
                     </td>
                 </tr>
                 <tr>
-                    <th>Email de notificación (tuyo)</th>
+                    <th><label for="llmstxt_model">Modelo de OpenAI</label></th>
                     <td>
-                        <input type="email" name="llmstxt_notify_email"
-                               value="<?php echo esc_attr( get_option('llmstxt_notify_email') ); ?>"
-                               class="regular-text" />
+                        <input type="text" id="llmstxt_model" name="llmstxt_model"
+                               value="<?php echo esc_attr( llmstxt_get_model() ); ?>" class="regular-text" />
+                        <p class="description">Por defecto <code><?php echo esc_html( LLMSTXT_DEFAULT_MODEL ); ?></code> (con búsqueda web). Usa "Probar conexión" abajo después de cambiarlo.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th><label for="llmstxt_notify_email">Email de notificación (tuyo)</label></th>
+                    <td>
+                        <input type="email" id="llmstxt_notify_email" name="llmstxt_notify_email"
+                               value="<?php echo esc_attr( get_option( 'llmstxt_notify_email' ) ); ?>" class="regular-text" />
                         <p class="description">Recibirás un aviso por cada nuevo lead.</p>
                     </td>
                 </tr>
                 <tr>
-                    <th>Nombre del remitente</th>
+                    <th><label for="llmstxt_from_name">Nombre del remitente</label></th>
                     <td>
-                        <input type="text" name="llmstxt_from_name"
-                               value="<?php echo esc_attr( get_option('llmstxt_from_name', 'Tu Agencia SEO') ); ?>"
-                               class="regular-text" />
+                        <input type="text" id="llmstxt_from_name" name="llmstxt_from_name"
+                               value="<?php echo esc_attr( get_option( 'llmstxt_from_name', 'Tu Agencia SEO' ) ); ?>" class="regular-text" />
                     </td>
                 </tr>
                 <tr>
-                    <th>Email del remitente</th>
+                    <th><label for="llmstxt_from_email">Email del remitente</label></th>
                     <td>
-                        <input type="email" name="llmstxt_from_email"
-                               value="<?php echo esc_attr( get_option('llmstxt_from_email') ); ?>"
-                               class="regular-text" />
+                        <input type="email" id="llmstxt_from_email" name="llmstxt_from_email"
+                               value="<?php echo esc_attr( get_option( 'llmstxt_from_email' ) ); ?>" class="regular-text" />
+                        <p class="description">Usa un email de tu propio dominio para que los correos no caigan en spam. Si lo dejas vacío se usa el email del administrador.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th><label for="llmstxt_cta_url">Enlace del botón "Quiero saber más"</label></th>
+                    <td>
+                        <input type="text" id="llmstxt_cta_url" name="llmstxt_cta_url"
+                               value="<?php echo esc_attr( get_option( 'llmstxt_cta_url', '/contacto' ) ); ?>" class="regular-text" />
                     </td>
                 </tr>
             </table>
             <?php submit_button( 'Guardar configuración' ); ?>
         </form>
+
         <hr>
         <h2>Shortcode</h2>
         <code style="font-size:15px;padding:8px 12px;background:#f0f0f0;display:inline-block">[llmstxt_generator]</code>
-        <hr>
-        <h2>Nota sobre el procesamiento</h2>
-        <p>El archivo llms.txt se genera en segundo plano y se envía al usuario por email automáticamente.<br>
-        El proceso tarda entre 1 y 3 minutos dependiendo de la cantidad de URLs analizadas.</p>
+        <p>El archivo llms.txt se genera en segundo plano (WP-Cron) y se envía al usuario por email en 1–3 minutos.</p>
+
         <hr>
         <h2>Diagnóstico</h2>
-        <?php
-        global $wpdb;
-        $diag_table   = $wpdb->prefix . 'llmstxt_leads';
-        $table_exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $diag_table ) ) === $diag_table;
-        $api_key_set  = ! empty( get_option( 'llmstxt_openai_key' ) );
-        $db_version   = get_option( 'llmstxt_db_version', '(no guardada)' );
-        $ok   = '<span style="color:green;font-weight:bold">✓</span>';
-        $fail = '<span style="color:red;font-weight:bold">✗</span>';
-        $actual_cols  = $table_exists ? $wpdb->get_col( "DESCRIBE $diag_table", 0 ) : [];
-        $has_ip_col   = in_array( 'ip_address', (array) $actual_cols, true );
-        ?>
-        <?php $last_db_error = get_transient( 'llmstxt_last_db_error' ); ?>
-        <table class="widefat" style="max-width:600px">
+        <table class="widefat striped" style="max-width:820px">
+            <tbody>
             <tr>
-                <td>Tabla <code><?php echo esc_html( $diag_table ); ?></code></td>
-                <td><?php echo $table_exists ? $ok . ' Existe' : $fail . ' <strong>No existe</strong>'; ?></td>
+                <td style="width:260px">Versión del plugin / de la BD</td>
+                <td><code><?php echo esc_html( LLMSTXT_VERSION ); ?></code> / <code><?php echo esc_html( $db_version ); ?></code>
+                    <?php echo LLMSTXT_VERSION === $db_version ? $ok : $warn . 'La migración no terminó: pulsa "Reparar base de datos".'; ?></td>
             </tr>
             <tr>
-                <td>Columna <code>ip_address</code></td>
-                <td><?php echo $has_ip_col ? $ok . ' Existe' : $fail . ' <strong>No existe</strong>'; ?></td>
+                <td>Tabla <code><?php echo esc_html( llmstxt_table() ); ?></code></td>
+                <td><?php echo $table_exists ? $ok . 'Existe' : $fail . '<strong>No existe</strong>'; ?></td>
             </tr>
             <tr>
-                <td>Columnas en tabla</td>
-                <td><code><?php echo esc_html( implode( ', ', (array) $actual_cols ) ); ?></code></td>
+                <td>Columnas</td>
+                <td><?php echo empty( $missing_cols )
+                    ? $ok . 'Todas presentes'
+                    : $fail . 'Faltan: <code>' . esc_html( implode( ', ', $missing_cols ) ) . '</code>'; ?></td>
             </tr>
             <tr>
                 <td>API Key OpenAI</td>
-                <td><?php echo $api_key_set ? $ok . ' Configurada' : $fail . ' <strong>No configurada</strong>'; ?></td>
+                <td><?php echo $has_key ? $ok . 'Configurada' : $fail . '<strong>No configurada</strong>'; ?></td>
             </tr>
             <tr>
-                <td>Versión DB guardada</td>
-                <td><code><?php echo esc_html( $db_version ); ?></code></td>
+                <td>Modelo</td>
+                <td><code><?php echo esc_html( llmstxt_get_model() ); ?></code></td>
+            </tr>
+            <tr>
+                <td>Última prueba de conexión</td>
+                <td><?php
+                    if ( ! $last_api_test ) {
+                        echo $warn . 'Aún no se ha probado.';
+                    } else {
+                        echo ( $last_api_test['ok'] ? $ok : $fail ) . esc_html( $last_api_test['message'] ) . ' <small>(' . esc_html( $last_api_test['time'] ) . ')</small>';
+                    } ?></td>
+            </tr>
+            <tr>
+                <td>WP-Cron</td>
+                <td><?php
+                    if ( $cron_disabled ) {
+                        echo $warn . '<code>DISABLE_WP_CRON</code> está activo. Los trabajos solo se ejecutan si tu hosting llama a <code>' . esc_html( site_url( 'wp-cron.php' ) ) . '</code> con un cron del sistema (cada 1–5 minutos).';
+                    } else {
+                        echo $ok . 'Activo';
+                    } ?></td>
+            </tr>
+            <tr>
+                <td>Trabajos en cola</td>
+                <td><?php
+                    echo esc_html( $queued ) . ' en cola';
+                    if ( $late > 0 ) {
+                        echo '<br>' . $fail . esc_html( $late ) . ' atrasados más de 5 minutos: WP-Cron no se está ejecutando. Revisa <a href="' . esc_url( admin_url( 'site-health.php' ) ) . '">Salud del sitio</a> (prueba de "loopback") o usa "Reprocesar" en LLMs.txt Leads.';
+                    } ?></td>
+            </tr>
+            <tr>
+                <td>Leads con error</td>
+                <td><?php echo $error_leads
+                    ? $warn . esc_html( $error_leads ) . ' — ver detalle en <a href="' . esc_url( admin_url( 'admin.php?page=llmstxt-leads' ) ) . '">LLMs.txt Leads</a>'
+                    : $ok . 'Ninguno'; ?></td>
             </tr>
             <?php if ( $last_db_error ) : ?>
             <tr>
-                <td><strong>Último error DB</strong></td>
-                <td style="color:red"><code><?php echo esc_html( $last_db_error ); ?></code></td>
+                <td><strong>Último error de BD</strong></td>
+                <td style="color:#dc2626"><code><?php echo esc_html( $last_db_error ); ?></code></td>
             </tr>
             <?php endif; ?>
+            </tbody>
         </table>
-        <?php if ( ! $table_exists ) : ?>
-        <p><a href="<?php echo esc_url( add_query_arg( 'llmstxt_create_table', '1' ) ); ?>" class="button button-primary">Crear tabla ahora</a></p>
-        <?php endif; ?>
-        <?php if ( $table_exists && ! $has_ip_col ) : ?>
-        <p><a href="<?php echo esc_url( add_query_arg( 'llmstxt_create_table', '1' ) ); ?>" class="button button-primary">Añadir columna ip_address ahora</a></p>
-        <?php endif; ?>
         <p>
-            <a href="<?php echo esc_url( add_query_arg( 'llmstxt_reset_ratelimit', '1' ) ); ?>" class="button">
-                Limpiar límite de intentos (rate limit)
-            </a>
-            <span style="color:#666;margin-left:8px">Úsalo si ves "Has alcanzado el límite de generaciones"</span>
+            <a href="<?php echo esc_url( llmstxt_action_url( 'llmstxt_repair_db' ) ); ?>" class="button button-primary">Reparar base de datos</a>
+            <a href="<?php echo esc_url( llmstxt_action_url( 'llmstxt_test_openai' ) ); ?>" class="button">Probar conexión con OpenAI</a>
+            <a href="<?php echo esc_url( llmstxt_action_url( 'llmstxt_reset_ratelimit' ) ); ?>" class="button">Limpiar límite de intentos</a>
         </p>
+        <p class="description">Los administradores conectados no tienen límite de intentos. Los errores detallados también se escriben en <code>wp-content/debug.log</code> si activas <code>WP_DEBUG_LOG</code>.</p>
     </div>
     <?php
 }
 
-// Acción manual para limpiar rate limits
-add_action( 'admin_init', function() {
-    if ( isset( $_GET['llmstxt_reset_ratelimit'] ) && current_user_can( 'manage_options' ) ) {
-        global $wpdb;
-        $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_llmstxt_rl_%' OR option_name LIKE '_transient_timeout_llmstxt_rl_%'" );
-        add_action( 'admin_notices', function() {
-            echo '<div class="notice notice-success"><p><strong>LLMs.txt Generator:</strong> Límite de intentos reiniciado correctamente.</p></div>';
-        } );
-    }
-} );
+// ═════════════════════════════════════════════════════════════════════════════
+// Página de leads
+// ═════════════════════════════════════════════════════════════════════════════
 
-// Acción manual para crear tabla desde el admin
-add_action( 'admin_init', function() {
-    if ( isset( $_GET['llmstxt_create_table'] ) && current_user_can( 'manage_options' ) ) {
-        llmstxt_activate();
-        add_action( 'admin_notices', function() {
-            echo '<div class="notice notice-success"><p><strong>LLMs.txt Generator:</strong> Tabla creada correctamente.</p></div>';
-        } );
-    }
-} );
-
-// ─── Leads page ──────────────────────────────────────────────────────────────
 function llmstxt_leads_page() {
     if ( ! current_user_can( 'manage_options' ) ) wp_die( 'No autorizado.' );
     global $wpdb;
-    $table = $wpdb->prefix . 'llmstxt_leads';
-    $leads = $wpdb->get_results(
-        $wpdb->prepare( "SELECT * FROM {$table} ORDER BY created_at DESC LIMIT %d", 1000 )
-    );
+
+    if ( ! empty( llmstxt_missing_columns() ) ) {
+        echo '<div class="wrap"><h1>Leads capturados</h1><div class="notice notice-error"><p>La tabla de leads está incompleta. Ve a <a href="'
+            . esc_url( admin_url( 'options-general.php?page=llmstxt-settings' ) ) . '">Ajustes → LLMs.txt Generator</a> y pulsa "Reparar base de datos".</p></div></div>';
+        return;
+    }
+
+    $leads  = $wpdb->get_results( $wpdb->prepare( 'SELECT * FROM ' . llmstxt_table() . ' ORDER BY id DESC LIMIT %d', 500 ) );
+    $labels = [
+        'pending'    => '<span style="color:#d97706">⏳ Pendiente</span>',
+        'processing' => '<span style="color:#2563eb">⚙ Procesando</span>',
+        'done'       => '<span style="color:#16a34a">✓ Enviado</span>',
+        'error'      => '<span style="color:#dc2626">✗ Error</span>',
+    ];
     ?>
     <div class="wrap">
         <h1>Leads capturados (<?php echo intval( count( $leads ) ); ?>)</h1>
+        <p class="description">"Reprocesar" genera el archivo y envía el email en ese momento, sin esperar a WP-Cron. Puede tardar 1–3 minutos: no cierres la página.</p>
         <table class="widefat striped">
-            <thead><tr><th>#</th><th>Email</th><th>Nombre</th><th>Sitio web</th><th>Estado</th><th>IP</th><th>Fecha</th></tr></thead>
+            <thead><tr>
+                <th>#</th><th>Email</th><th>Nombre</th><th>Sitio web</th><th>Estado</th><th>Detalle</th><th>Intentos</th><th>IP</th><th>Fecha</th><th></th>
+            </tr></thead>
             <tbody>
-            <?php if ( $leads ) : foreach ( $leads as $lead ) :
-                $status_label = 'done' === $lead->status ? '<span style="color:#16a34a">✓ Enviado</span>' : '<span style="color:#f59e0b">⏳ Pendiente</span>';
-            ?>
+            <?php if ( $leads ) : foreach ( $leads as $lead ) : ?>
                 <tr>
                     <td><?php echo intval( $lead->id ); ?></td>
                     <td><?php echo esc_html( $lead->email ); ?></td>
                     <td><?php echo esc_html( $lead->name ); ?></td>
                     <td><a href="<?php echo esc_url( $lead->website ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $lead->website ); ?></a></td>
-                    <td><?php echo $status_label; ?></td>
-                    <td><?php echo esc_html( $lead->ip_address ?? '—' ); ?></td>
+                    <td><?php echo $labels[ $lead->status ] ?? esc_html( $lead->status ); ?></td>
+                    <td style="max-width:320px;word-break:break-word"><?php echo $lead->error_message ? '<small style="color:#dc2626">' . esc_html( $lead->error_message ) . '</small>' : '—'; ?></td>
+                    <td><?php echo intval( $lead->attempts ); ?></td>
+                    <td><?php echo esc_html( $lead->ip_address ?: '—' ); ?></td>
                     <td><?php echo esc_html( $lead->created_at ); ?></td>
+                    <td>
+                        <?php if ( empty( $lead->urls_submitted ) ) : ?>
+                            <small>Sin URLs guardadas</small>
+                        <?php else : ?>
+                            <a class="button button-small"
+                               href="<?php echo esc_url( llmstxt_action_url( 'llmstxt_reprocess', [ 'lead_id' => $lead->id ] ) ); ?>"
+                               onclick="return confirm('¿Generar y enviar de nuevo el llms.txt a <?php echo esc_js( $lead->email ); ?>?');">Reprocesar</a>
+                        <?php endif; ?>
+                    </td>
                 </tr>
             <?php endforeach; else : ?>
-                <tr><td colspan="7">Aún no hay leads.</td></tr>
+                <tr><td colspan="10">Aún no hay leads.</td></tr>
             <?php endif; ?>
             </tbody>
         </table>
@@ -256,15 +466,18 @@ function llmstxt_leads_page() {
     <?php
 }
 
-// ─── Shortcode ───────────────────────────────────────────────────────────────
-add_shortcode( 'llmstxt_generator', 'llmstxt_shortcode' );
-function llmstxt_shortcode() {
+// ═════════════════════════════════════════════════════════════════════════════
+// Shortcode (formulario público)
+// ═════════════════════════════════════════════════════════════════════════════
+
+add_shortcode( 'llmstxt_generator', function() {
     wp_enqueue_style(  'llmstxt-style',  LLMSTXT_PLUGIN_URL . 'assets/style.css', [], LLMSTXT_VERSION );
-    wp_enqueue_script( 'llmstxt-script', LLMSTXT_PLUGIN_URL . 'assets/app.js', ['jquery'], LLMSTXT_VERSION, true );
+    wp_enqueue_script( 'llmstxt-script', LLMSTXT_PLUGIN_URL . 'assets/app.js', [ 'jquery' ], LLMSTXT_VERSION, true );
     wp_localize_script( 'llmstxt-script', 'llmstxtAjax', [
         'ajax_url' => admin_url( 'admin-ajax.php' ),
         'nonce'    => wp_create_nonce( 'llmstxt_nonce' ),
-    ]);
+    ] );
+    $cta_url = get_option( 'llmstxt_cta_url', '/contacto' ) ?: '/contacto';
 
     ob_start(); ?>
     <div id="llmstxt-app">
@@ -294,7 +507,7 @@ function llmstxt_shortcode() {
                 </div>
                 <div class="llmstxt-field">
                     <label for="llmstxt-urls">URLs importantes de tu sitio *
-                        <span class="llmstxt-hint">Una por línea. Máximo 20 URLs.</span>
+                        <span class="llmstxt-hint">Una por línea. Máximo <?php echo intval( LLMSTXT_MAX_URLS ); ?> URLs.</span>
                     </label>
                     <textarea id="llmstxt-urls" rows="6"
                         placeholder="https://tuempresa.com&#10;https://tuempresa.com/servicios&#10;https://tuempresa.com/contacto" required></textarea>
@@ -305,7 +518,6 @@ function llmstxt_shortcode() {
             </form>
         </div>
 
-        <!-- Pantalla de confirmación (reemplaza al loading) -->
         <div id="llmstxt-step-success" class="llmstxt-card" style="display:none">
             <div class="llmstxt-success-header">
                 <span class="llmstxt-check">✓</span>
@@ -315,180 +527,268 @@ function llmstxt_shortcode() {
             <div class="llmstxt-cta-box">
                 <p><strong>¿Quieres que tu negocio aparezca en más búsquedas de IA?</strong></p>
                 <p>Nuestros servicios de SEO Local y GEO ayudan a negocios como el tuyo a dominar los resultados en Google y en herramientas de IA.</p>
-                <a href="/contacto" class="llmstxt-btn llmstxt-btn-cta">Quiero saber más →</a>
+                <a href="<?php echo esc_url( $cta_url ); ?>" class="llmstxt-btn llmstxt-btn-cta">Quiero saber más →</a>
             </div>
         </div>
 
     </div>
     <?php
     return ob_get_clean();
-}
+} );
 
-// ─── AJAX: validar, guardar lead, encolar job ─────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// AJAX: validar, guardar lead y encolar el trabajo
+// ═════════════════════════════════════════════════════════════════════════════
+
 add_action( 'wp_ajax_llmstxt_generate',        'llmstxt_ajax_generate' );
 add_action( 'wp_ajax_nopriv_llmstxt_generate', 'llmstxt_ajax_generate' );
 
 function llmstxt_ajax_generate() {
 
-    check_ajax_referer( 'llmstxt_nonce', 'nonce' );
+    // Un nonce caducado (p. ej. por caché de página) no debe verse como "error de conexión".
+    if ( ! check_ajax_referer( 'llmstxt_nonce', 'nonce', false ) ) {
+        wp_send_json_error( [ 'message' => 'La página lleva demasiado tiempo abierta. Recárgala e inténtalo de nuevo.', 'code' => 'nonce' ], 403 );
+    }
 
     $ip = llmstxt_get_ip();
-    if ( ! llmstxt_rate_ok( $ip ) ) {
-        wp_send_json_error( [ 'message' => 'Has alcanzado el límite de generaciones por hora. Intenta más tarde.' ] );
+    if ( llmstxt_rate_limited( $ip ) ) {
+        wp_send_json_error( [ 'message' => 'Has alcanzado el límite de generaciones por hora. Intenta más tarde.', 'code' => 'rate_limit' ] );
     }
 
     $name    = sanitize_text_field(     wp_unslash( $_POST['name']    ?? '' ) );
-    $email   = sanitize_email(                      $_POST['email']   ?? '' );
-    $website = esc_url_raw(             wp_unslash( $_POST['website'] ?? '' ) );
+    $email   = sanitize_email(          wp_unslash( $_POST['email']   ?? '' ) );
+    $website = esc_url_raw( trim(       wp_unslash( $_POST['website'] ?? '' ) ) );
     $nap     = sanitize_textarea_field( wp_unslash( $_POST['nap']     ?? '' ) );
     $urls    = sanitize_textarea_field( wp_unslash( $_POST['urls']    ?? '' ) );
 
-    if ( ! $email || ! $website || ! $nap || ! $urls ) {
-        wp_send_json_error( [ 'message' => 'Faltan campos requeridos.' ] );
+    if ( ! $name || ! $email || ! $website || ! $nap || ! $urls ) {
+        wp_send_json_error( [ 'message' => 'Por favor completa todos los campos requeridos.' ] );
+    }
+    if ( mb_strlen( $name ) > 100 ) {
+        wp_send_json_error( [ 'message' => 'El nombre es demasiado largo (máx. 100 caracteres).' ] );
     }
     if ( ! is_email( $email ) ) {
         wp_send_json_error( [ 'message' => 'El email no es válido.' ] );
     }
-
-    $parsed = wp_parse_url( $website );
-    if ( empty( $parsed['scheme'] ) || ! in_array( $parsed['scheme'], [ 'http', 'https' ], true ) || empty( $parsed['host'] ) ) {
-        wp_send_json_error( [ 'message' => 'La URL debe comenzar con https:// o http://.' ] );
+    if ( ! llmstxt_is_http_url( $website ) ) {
+        wp_send_json_error( [ 'message' => 'La URL del sitio debe comenzar con https:// o http://.' ] );
     }
     if ( mb_strlen( $nap ) > LLMSTXT_MAX_FIELD ) {
-        wp_send_json_error( [ 'message' => 'El campo NAP es demasiado largo (máx. 500 caracteres).' ] );
+        wp_send_json_error( [ 'message' => 'El campo NAP es demasiado largo (máx. ' . LLMSTXT_MAX_FIELD . ' caracteres).' ] );
     }
 
-    $urls_list = array_filter( array_map( 'trim', explode( "\n", $urls ) ) );
+    $urls_list = array_values( array_unique( array_filter( array_map( 'trim', preg_split( '/\R/', $urls ) ) ) ) );
     if ( count( $urls_list ) > LLMSTXT_MAX_URLS ) {
         wp_send_json_error( [ 'message' => 'Máximo ' . LLMSTXT_MAX_URLS . ' URLs permitidas.' ] );
     }
     foreach ( $urls_list as $u ) {
-        $p = wp_parse_url( $u );
-        if ( empty( $p['scheme'] ) || ! in_array( $p['scheme'], [ 'http', 'https' ], true ) || empty( $p['host'] ) ) {
-            wp_send_json_error( [ 'message' => 'URL no válida: ' . esc_html( $u ) ] );
+        if ( ! llmstxt_is_http_url( $u ) ) {
+            wp_send_json_error( [ 'message' => 'URL no válida (debe empezar con https://): ' . $u ] );
         }
     }
+    $urls = implode( "\n", $urls_list );
 
-    // Guardar lead con estado 'pending'
-    global $wpdb;
-    $table = $wpdb->prefix . 'llmstxt_leads';
-
-    // Si la tabla no existe, intentar crearla ahora mismo
-    if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) ) !== $table ) {
-        llmstxt_activate();
-        // Si sigue sin existir, error claro
-        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) ) !== $table ) {
-            error_log( '[LLMs.txt Generator] No se pudo crear la tabla ' . $table . '. DB error: ' . $wpdb->last_error );
-            wp_send_json_error( [ 'message' => 'Error de configuración: no se pudo crear la tabla en la base de datos.' ] );
-        }
-    }
-
-    $inserted = $wpdb->insert(
-        $table,
-        [
-            'email'          => $email,
-            'name'           => $name,
-            'website'        => $website,
-            'urls_submitted' => $urls,
-            'ip_address'     => $ip,
-            'status'         => 'pending',
-            'created_at'     => current_time( 'mysql' ),
-        ],
-        [ '%s', '%s', '%s', '%s', '%s', '%s', '%s' ]
-    );
-
-    if ( false === $inserted ) {
-        $db_err = $wpdb->last_error ?: '(sin mensaje de error)';
-        error_log( '[LLMs.txt Generator] DB insert failed: ' . $db_err );
-        set_transient( 'llmstxt_last_db_error', $db_err, 600 );
+    $lead_id = llmstxt_insert_lead( [
+        'email'          => $email,
+        'name'           => $name,
+        'website'        => $website,
+        'nap'            => $nap,
+        'urls_submitted' => $urls,
+        'ip_address'     => $ip,
+    ] );
+    if ( ! $lead_id ) {
         wp_send_json_error( [ 'message' => 'Error interno al guardar la solicitud. Por favor intenta de nuevo.' ] );
     }
 
-    $lead_id = $wpdb->insert_id;
+    // Solo los envíos guardados cuentan para el límite.
+    llmstxt_rate_hit( $ip );
 
-    // Notificar a la agencia del nuevo lead (inmediato)
     llmstxt_notify_agency( $email, $name, $website );
 
-    // Encolar procesamiento asíncrono en WP-Cron (se ejecuta en el próximo ciclo)
-    wp_schedule_single_event( time(), 'llmstxt_process_job', [ $lead_id, $email, $name, $website, $nap, $urls ] );
-
-    // Disparar el cron inmediatamente sin bloquear (fire-and-forget)
-    wp_remote_post( home_url( '/wp-cron.php' ), [
-        'timeout'   => 1,
-        'blocking'  => false,
-        'sslverify' => apply_filters( 'https_local_ssl_verify', false ),
-        'body'      => [ 'doing_wp_cron' => '1' ],
-    ] );
+    wp_schedule_single_event( time(), LLMSTXT_CRON_HOOK, [ (int) $lead_id ] );
+    spawn_cron(); // dispara WP-Cron en segundo plano (mecanismo oficial de WordPress)
 
     wp_send_json_success( [ 'email' => $email ] );
 }
 
-// ─── Procesamiento asíncrono (WP-Cron) ───────────────────────────────────────
-add_action( 'llmstxt_process_job', 'llmstxt_process_job', 10, 6 );
+/** Inserta el lead; si falla por una columna faltante, repara la tabla y reintenta una vez. */
+function llmstxt_insert_lead( array $data ) {
+    global $wpdb;
+    $now  = current_time( 'mysql' );
+    $data = array_merge( $data, [ 'status' => 'pending', 'attempts' => 0, 'created_at' => $now, 'updated_at' => $now ] );
 
-function llmstxt_process_job( $lead_id, $email, $name, $website, $nap, $urls ) {
+    for ( $try = 1; $try <= 2; $try++ ) {
+        if ( false !== $wpdb->insert( llmstxt_table(), $data ) ) {
+            return (int) $wpdb->insert_id;
+        }
+        $err = $wpdb->last_error ?: '(sin mensaje de error)';
+        llmstxt_log( "Insert falló (intento $try): $err" );
+        set_transient( 'llmstxt_last_db_error', $err, DAY_IN_SECONDS );
+        if ( 1 === $try ) {
+            llmstxt_install_db();
+        }
+    }
+    return 0;
+}
 
-    // Sin límite de tiempo para el proceso en background
-    @set_time_limit( 300 );
+// ═════════════════════════════════════════════════════════════════════════════
+// Procesamiento (WP-Cron o "Reprocesar" desde el admin)
+// ═════════════════════════════════════════════════════════════════════════════
 
-    $api_key = get_option( 'llmstxt_openai_key' );
-    if ( ! $api_key ) {
-        error_log( '[LLMs.txt Generator] Job abortado: no hay API key configurada. Lead ID: ' . $lead_id );
-        return;
+// Acepta hasta 6 argumentos por compatibilidad con trabajos encolados por versiones ≤ 3.1
+// ([lead_id, email, name, website, nap, urls]). Los nuevos solo pasan [lead_id].
+add_action( LLMSTXT_CRON_HOOK, function( $lead_id, ...$legacy ) {
+    llmstxt_run_job( (int) $lead_id, false, $legacy[3] ?? '', $legacy[4] ?? '' );
+}, 10, 6 );
+
+/**
+ * Genera el llms.txt de un lead y lo envía por email.
+ * Marca el lead como processing → done / error y guarda el motivo del error.
+ *
+ * @return true|WP_Error
+ */
+function llmstxt_run_job( $lead_id, $force = false, $legacy_nap = '', $legacy_urls = '' ) {
+    global $wpdb;
+    $table = llmstxt_table();
+    $lead  = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $table WHERE id = %d", $lead_id ) );
+
+    if ( ! $lead ) {
+        llmstxt_log( "Lead $lead_id no encontrado." );
+        return new WP_Error( 'not_found', 'Lead no encontrado.' );
+    }
+    if ( 'done' === $lead->status && ! $force ) {
+        return true; // ya enviado: evita duplicados si el evento se ejecuta dos veces
     }
 
-    $urls_list      = array_filter( array_map( 'trim', explode( "\n", $urls ) ) );
-    $urls_formatted = implode( "\n", $urls_list );
+    @set_time_limit( LLMSTXT_API_TIMEOUT + 60 );
 
-    $prompt = llmstxt_build_prompt( $website, $nap, $urls_formatted );
+    $wpdb->query( $wpdb->prepare(
+        "UPDATE $table SET status = 'processing', attempts = attempts + 1, error_message = NULL, updated_at = %s WHERE id = %d",
+        current_time( 'mysql' ), $lead_id
+    ) );
+
+    $nap  = $lead->nap ?: $legacy_nap;
+    $urls = $lead->urls_submitted ?: $legacy_urls;
+
+    $content = llmstxt_generate_content( $lead->website, $nap, $urls );
+    if ( is_wp_error( $content ) ) {
+        return llmstxt_fail_lead( $lead_id, $content );
+    }
+
+    $sent = llmstxt_send_to_user( $lead->email, $lead->name, $lead->website, $content );
+    if ( is_wp_error( $sent ) ) {
+        return llmstxt_fail_lead( $lead_id, $sent );
+    }
+
+    $wpdb->update(
+        $table,
+        [ 'status' => 'done', 'error_message' => null, 'updated_at' => current_time( 'mysql' ) ],
+        [ 'id' => $lead_id ]
+    );
+    return true;
+}
+
+function llmstxt_fail_lead( $lead_id, WP_Error $error ) {
+    global $wpdb;
+    $msg = mb_substr( $error->get_error_message(), 0, 1000 );
+    llmstxt_log( "Lead $lead_id: $msg" );
+    $wpdb->update(
+        llmstxt_table(),
+        [ 'status' => 'error', 'error_message' => $msg, 'updated_at' => current_time( 'mysql' ) ],
+        [ 'id' => $lead_id ]
+    );
+    return $error;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// OpenAI
+// ═════════════════════════════════════════════════════════════════════════════
+
+function llmstxt_is_reasoning_model( $model ) {
+    return (bool) preg_match( '/^(gpt-5|o\d)/i', $model );
+}
+
+/** Extrae un mensaje legible de una respuesta de error de OpenAI. */
+function llmstxt_openai_error( $response ) {
+    $code = wp_remote_retrieve_response_code( $response );
+    $body = json_decode( wp_remote_retrieve_body( $response ), true );
+    $msg  = $body['error']['message'] ?? mb_substr( wp_remote_retrieve_body( $response ), 0, 300 );
+    $hint = '';
+    if ( 401 === $code ) $hint = ' Revisa la API key en Ajustes.';
+    if ( 404 === $code ) $hint = ' Revisa el nombre del modelo en Ajustes.';
+    if ( 429 === $code ) $hint = ' Límite de uso o saldo insuficiente en tu cuenta de OpenAI.';
+    return new WP_Error( 'openai_http_' . $code, "OpenAI respondió HTTP $code: $msg.$hint" );
+}
+
+/** Verifica la API key y que el modelo configurado exista. */
+function llmstxt_test_openai() {
+    $api_key = get_option( 'llmstxt_openai_key' );
+    if ( ! $api_key ) return new WP_Error( 'no_key', 'No hay API key configurada.' );
+
+    $response = wp_remote_get( 'https://api.openai.com/v1/models/' . rawurlencode( llmstxt_get_model() ), [
+        'timeout' => 20,
+        'headers' => [ 'Authorization' => 'Bearer ' . $api_key ],
+    ] );
+    if ( is_wp_error( $response ) ) {
+        return new WP_Error( 'http', 'No se pudo conectar con OpenAI desde tu servidor: ' . $response->get_error_message() );
+    }
+    if ( 200 !== wp_remote_retrieve_response_code( $response ) ) {
+        return llmstxt_openai_error( $response );
+    }
+    return true;
+}
+
+/** @return string|WP_Error Contenido del llms.txt. */
+function llmstxt_generate_content( $website, $nap, $urls ) {
+    $api_key = get_option( 'llmstxt_openai_key' );
+    if ( ! $api_key ) {
+        return new WP_Error( 'no_key', 'No hay API key de OpenAI configurada.' );
+    }
+    if ( ! $urls ) {
+        return new WP_Error( 'no_urls', 'El lead no tiene URLs guardadas.' );
+    }
+
+    $model   = llmstxt_get_model();
+    $payload = [
+        'model' => $model,
+        'tools' => [ [ 'type' => 'web_search' ] ],
+        'input' => llmstxt_build_prompt( $website, $nap, $urls ),
+    ];
+    if ( llmstxt_is_reasoning_model( $model ) ) {
+        // Esfuerzo bajo: suficiente para esta tarea y mucho más rápido (evita timeouts).
+        $payload['reasoning'] = [ 'effort' => 'low' ];
+    }
+    $payload = apply_filters( 'llmstxt_openai_payload', $payload );
 
     $response = wp_remote_post( 'https://api.openai.com/v1/responses', [
-        'timeout' => 180,
+        'timeout' => LLMSTXT_API_TIMEOUT,
         'headers' => [
             'Authorization' => 'Bearer ' . $api_key,
             'Content-Type'  => 'application/json',
         ],
-        'body' => wp_json_encode( [
-            'model' => 'gpt-4o-mini',
-            'tools' => [ [ 'type' => 'web_search_preview' ] ],
-            'input' => $prompt,
-        ] ),
+        'body'    => wp_json_encode( $payload ),
     ] );
 
     if ( is_wp_error( $response ) ) {
-        error_log( '[LLMs.txt Generator] Error HTTP Lead ' . $lead_id . ': ' . $response->get_error_message() );
-        return;
+        return new WP_Error( 'http', 'No se pudo conectar con OpenAI: ' . $response->get_error_message() );
+    }
+    if ( 200 !== wp_remote_retrieve_response_code( $response ) ) {
+        return llmstxt_openai_error( $response );
     }
 
-    $http_code = wp_remote_retrieve_response_code( $response );
-    if ( $http_code !== 200 ) {
-        error_log( '[LLMs.txt Generator] OpenAI HTTP ' . $http_code . ' Lead ' . $lead_id . ': ' . wp_remote_retrieve_body( $response ) );
-        return;
+    $body   = json_decode( wp_remote_retrieve_body( $response ), true );
+    $status = $body['status'] ?? 'completed';
+    $text   = llmstxt_extract_content( $body );
+
+    if ( 'completed' !== $status && '' === $text ) {
+        $reason = $body['incomplete_details']['reason'] ?? $status;
+        return new WP_Error( 'incomplete', "OpenAI no terminó la respuesta (motivo: $reason)." );
     }
-
-    $body            = json_decode( wp_remote_retrieve_body( $response ), true );
-    $llmstxt_content = llmstxt_extract_content( $body );
-
-    if ( empty( $llmstxt_content ) ) {
-        error_log( '[LLMs.txt Generator] Contenido vacío tras parsear respuesta. Lead ' . $lead_id . '. Body: ' . wp_remote_retrieve_body( $response ) );
-        return;
+    if ( '' === $text ) {
+        return new WP_Error( 'empty', 'OpenAI respondió sin contenido de texto.' );
     }
-
-    // Enviar email al usuario
-    llmstxt_send_to_user( $email, $name, $website, $llmstxt_content );
-
-    // Marcar lead como completado
-    global $wpdb;
-    $wpdb->update(
-        $wpdb->prefix . 'llmstxt_leads',
-        [ 'status' => 'done' ],
-        [ 'id'     => $lead_id ],
-        [ '%s' ],
-        [ '%d' ]
-    );
+    return $text;
 }
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function llmstxt_build_prompt( $website, $nap, $urls_formatted ) {
     return <<<PROMPT
@@ -506,7 +806,7 @@ URLS TO SEARCH AND INCLUDE:
 
 INSTRUCTIONS:
 1. Search each URL to retrieve real page content: title, services, locations, prices if visible.
-2. Detect the language of the business (Spanish or English) from the content found.
+2. Detect the language of the business (Spanish or English) from the content found and write the file in that language.
 3. Generate the complete llms.txt following the official llmstxt.org spec strictly.
 
 REQUIRED STRUCTURE (in this exact order):
@@ -543,60 +843,111 @@ RULES:
 - Keep descriptions factual and specific based on what you actually found on each page
 - Do NOT include: privacy policy, cookie policy, login pages, admin URLs
 - Do NOT fabricate prices or credentials not found on the pages
-- Output ONLY the llms.txt content — no explanations, no markdown fences, no preamble
+- Output ONLY the llms.txt content — no explanations, no markdown fences, no preamble, no citations
 PROMPT;
 }
 
+/** Une el texto de todos los mensajes de la Responses API y quita fences de markdown. */
 function llmstxt_extract_content( $body ) {
-    if ( empty( $body['output'] ) ) return '';
+    if ( empty( $body['output'] ) || ! is_array( $body['output'] ) ) return '';
+    $parts = [];
     foreach ( $body['output'] as $item ) {
-        if ( isset( $item['type'] ) && 'message' === $item['type'] ) {
-            foreach ( $item['content'] as $block ) {
-                if ( isset( $block['type'] ) && 'output_text' === $block['type'] && ! empty( $block['text'] ) ) {
-                    return trim( $block['text'] );
-                }
+        if ( ( $item['type'] ?? '' ) !== 'message' || empty( $item['content'] ) ) continue;
+        foreach ( $item['content'] as $block ) {
+            if ( ( $block['type'] ?? '' ) === 'output_text' && ! empty( $block['text'] ) ) {
+                $parts[] = $block['text'];
             }
         }
     }
-    return '';
+    $text = trim( implode( "\n\n", $parts ) );
+    $text = preg_replace( '/^```[a-z]*\s*\n|\n?```\s*$/i', '', $text );
+    return trim( $text );
 }
 
-function llmstxt_rate_ok( $ip ) {
-    $key   = 'llmstxt_rl_' . md5( $ip );
-    $count = (int) get_transient( $key );
-    if ( $count >= LLMSTXT_RATE_LIMIT ) return false;
-    set_transient( $key, $count + 1, LLMSTXT_RATE_WINDOW );
-    return true;
+// ═════════════════════════════════════════════════════════════════════════════
+// Utilidades
+// ═════════════════════════════════════════════════════════════════════════════
+
+function llmstxt_is_http_url( $url ) {
+    $p = wp_parse_url( $url );
+    return ! empty( $p['scheme'] ) && in_array( strtolower( $p['scheme'] ), [ 'http', 'https' ], true ) && ! empty( $p['host'] );
+}
+
+function llmstxt_rate_key( $ip ) {
+    return 'llmstxt_rl_' . (int) get_option( 'llmstxt_rl_gen', 1 ) . '_' . md5( $ip );
+}
+
+function llmstxt_rate_limited( $ip ) {
+    if ( current_user_can( 'manage_options' ) ) return false; // el admin puede probar sin límite
+    return (int) get_transient( llmstxt_rate_key( $ip ) ) >= LLMSTXT_RATE_LIMIT;
+}
+
+function llmstxt_rate_hit( $ip ) {
+    if ( current_user_can( 'manage_options' ) ) return;
+    $key = llmstxt_rate_key( $ip );
+    set_transient( $key, (int) get_transient( $key ) + 1, LLMSTXT_RATE_WINDOW );
 }
 
 function llmstxt_get_ip() {
     return isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '0.0.0.0';
 }
 
-// ─── Emails ──────────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// Emails
+// ═════════════════════════════════════════════════════════════════════════════
 
+function llmstxt_mail_headers( $content_type = true ) {
+    $from_name  = get_option( 'llmstxt_from_name', 'Tu Agencia SEO' ) ?: get_bloginfo( 'name' );
+    $from_email = get_option( 'llmstxt_from_email' );
+    if ( ! is_email( $from_email ) ) $from_email = get_option( 'admin_email' );
+    $from_name  = str_replace( [ "\r", "\n", '"' ], '', $from_name );
+
+    $headers = [ "From: \"{$from_name}\" <{$from_email}>" ];
+    if ( $content_type ) $headers[] = 'Content-Type: text/plain; charset=UTF-8';
+    return $headers;
+}
+
+/** Envía el archivo adjunto como "llms.txt". @return true|WP_Error */
 function llmstxt_send_to_user( $email, $name, $website, $content ) {
-    $from_name  = get_option( 'llmstxt_from_name', 'Tu Agencia SEO' );
-    $from_email = get_option( 'llmstxt_from_email', get_option( 'admin_email' ) );
+    $dir = trailingslashit( get_temp_dir() ) . 'llmstxt-' . wp_generate_password( 12, false, false );
+    if ( ! wp_mkdir_p( $dir ) ) {
+        return new WP_Error( 'tmp', 'No se pudo crear la carpeta temporal para el adjunto.' );
+    }
+    $file = $dir . '/llms.txt';
+    if ( false === file_put_contents( $file, $content ) ) {
+        @rmdir( $dir );
+        return new WP_Error( 'tmp', 'No se pudo escribir el archivo temporal llms.txt.' );
+    }
 
-    $tmp = sys_get_temp_dir() . '/llms-' . wp_generate_password( 12, false ) . '.txt';
-    file_put_contents( $tmp, $content );
+    $host      = wp_parse_url( $website, PHP_URL_HOST ) ?: 'tudominio.com';
+    $scheme    = wp_parse_url( $website, PHP_URL_SCHEME ) ?: 'https';
+    $from_name = get_option( 'llmstxt_from_name', 'Tu Agencia SEO' );
+    $subject   = 'Tu archivo llms.txt está listo — ' . $host;
+    $message   = "Hola {$name},\n\n"
+               . "Tu archivo llms.txt para {$website} está listo. Lo encontrarás adjunto a este correo.\n\n"
+               . "Súbelo a la raíz de tu dominio para que quede disponible en:\n{$scheme}://{$host}/llms.txt\n\n"
+               . "— {$from_name}";
 
-    $subject = 'Tu archivo llms.txt está listo — ' . $website;
-    $message = "Hola {$name},\n\nTu archivo llms.txt para {$website} está listo.\n\nEncuéntralo adjunto. Súbelo a la raíz de tu dominio:\nhttps://tudominio.com/llms.txt\n\n— {$from_name}";
-    $headers = [
-        "From: {$from_name} <{$from_email}>",
-        'Content-Type: text/plain; charset=UTF-8',
-    ];
+    $mail_error = null;
+    $catch      = function( $wp_error ) use ( &$mail_error ) { $mail_error = $wp_error; };
+    add_action( 'wp_mail_failed', $catch );
+    $sent = wp_mail( $email, $subject, $message, llmstxt_mail_headers(), [ $file ] );
+    remove_action( 'wp_mail_failed', $catch );
 
-    wp_mail( $email, $subject, $message, $headers, [ $tmp ] );
-    @unlink( $tmp );
+    @unlink( $file );
+    @rmdir( $dir );
+
+    if ( ! $sent ) {
+        $detail = $mail_error instanceof WP_Error ? $mail_error->get_error_message() : 'sin detalle';
+        return new WP_Error( 'mail', "El llms.txt se generó pero el email no se pudo enviar ($detail). Instala/revisa WP Mail SMTP." );
+    }
+    return true;
 }
 
 function llmstxt_notify_agency( $user_email, $name, $website ) {
     $notify = get_option( 'llmstxt_notify_email' );
-    if ( ! $notify ) return;
+    if ( ! is_email( $notify ) ) return;
     $subject = "Nuevo lead: {$name} ({$website})";
     $message = "Alguien usó el generador de llms.txt.\n\nNombre: {$name}\nEmail: {$user_email}\nSitio: {$website}\n\nRevisa los leads en: " . admin_url( 'admin.php?page=llmstxt-leads' );
-    wp_mail( $notify, $subject, $message );
+    wp_mail( $notify, $subject, $message, llmstxt_mail_headers() );
 }

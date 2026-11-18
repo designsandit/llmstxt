@@ -1,0 +1,31 @@
+# Changelog — LLMs.txt Generator
+
+## 3.2.0
+Revisión completa del plugin en una sola pasada.
+
+**Correcciones**
+- Modelo restaurado a `gpt-5-mini` (en la v3.1.0 se había cambiado por error a `gpt-4o-mini`). Ahora se configura en Ajustes.
+- Herramienta de búsqueda actualizada a `web_search` (antes `web_search_preview`), con `reasoning.effort = low` para modelos GPT-5/o-series. Así es más rápido y hay menos riesgo de timeout.
+- Migración de base de datos reescrita sin `dbDelta`: crea la tabla y añade **todas** las columnas que falten a partir de una sola definición del esquema.
+- Si el guardado falla por una columna que falta, se repara la tabla y se reintenta automáticamente.
+- El límite de intentos solo cuenta los envíos guardados. Los errores ya no gastan cupo y los administradores no tienen límite.
+- Un nonce caducado (por caché de página) muestra "recarga la página" en lugar de "error de conexión".
+- El adjunto se llama `llms.txt` (antes `llms-XXXX.txt`).
+- Se comprueba si `wp_mail()` falló y se guarda el motivo.
+- WP-Cron se dispara con `spawn_cron()`, el mecanismo oficial, en lugar de una llamada manual a `wp-cron.php`.
+- El campo "nombre" se valida en el servidor.
+
+**Nuevo**
+- Estados de lead: Pendiente / Procesando / Enviado / **Error**, con el motivo visible y un contador de intentos.
+- Botón **Reprocesar** por lead: lo procesa al momento, sin depender de WP-Cron.
+- Diagnóstico ampliado: columnas faltantes, prueba de conexión con OpenAI, aviso de `DISABLE_WP_CRON`, trabajos atrasados y leads con error.
+- Acciones de administración protegidas con nonce (antes eran vulnerables a CSRF).
+- Ajustes nuevos: modelo de OpenAI y enlace del botón CTA.
+- Filtros `llmstxt_openai_model` y `llmstxt_openai_payload`.
+- Los datos del lead (NAP incluido) se guardan en la base de datos, lo que permite reprocesar.
+
+**Compatibilidad**
+- Los trabajos que quedaron en cola con versiones ≤ 3.1 se siguen procesando.
+
+## 3.1.0 y anteriores
+Correcciones hechas durante la depuración: tabla no creada, ZIP mal empaquetado, columnas `ip_address`/`status` faltantes, panel de diagnóstico y botón para limpiar el límite de intentos. Detalle en `HANDOFF-llms-txt-generator.md`.
