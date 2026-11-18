@@ -3,7 +3,7 @@
  * Plugin Name: LLMs.txt Generator
  * Plugin URI:  https://github.com/designsandit/llmstxt
  * Description: Genera archivos llms.txt para negocios usando IA (OpenAI GPT-5 mini + web search). Procesamiento asíncrono vía WP-Cron.
- * Version:     3.6.0
+ * Version:     3.6.1
  * Author:      Designs and IT
  * Author URI:  https://www.designsandit.com/?utm_source=media-seo&utm_medium=plugin&utm_campaign=lista-plugins
  * License:     GPL2
@@ -14,7 +14,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'LLMSTXT_VERSION',       '3.6.0' );
+define( 'LLMSTXT_VERSION',       '3.6.1' );
 define( 'LLMSTXT_AUTHOR',        'Designs and IT' );
 define( 'LLMSTXT_AUTHOR_URI',    'https://www.designsandit.com/?utm_source=media-seo&utm_medium=plugin&utm_campaign=lista-plugins' );
 define( 'LLMSTXT_PLUGIN_FILE',    __FILE__ );
@@ -63,6 +63,7 @@ function llmstxt_schema_columns() {
         'created_at'     => 'DATETIME NULL',
         'updated_at'     => 'DATETIME NULL',
         'llms_content'   => 'LONGTEXT NULL',  // último llms.txt generado (descargable desde el admin)
+        'city'           => 'VARCHAR(120) NULL', // ciudad del negocio (v3.6.1+)
         'profiles'       => 'TEXT NULL',      // URLs de perfiles del negocio (sameAs), una por línea
         'report'         => 'LONGTEXT NULL',  // informe JSON: schema, robots.txt y NAP
     ];
@@ -641,14 +642,22 @@ add_shortcode( 'llmstxt_generator', function() {
                             <div class="llms-row">
                                 <div class="llms-field llms-field-wide">
                                     <label for="llms-address">Dirección</label>
-                                    <input id="llms-address" type="text" autocomplete="street-address" maxlength="250" placeholder="Cra. 7 # 71-21, Bogotá" aria-describedby="llms-err-address">
+                                    <input id="llms-address" type="text" autocomplete="street-address" maxlength="250" placeholder="Cra. 7 # 71-21, Oficina 302" aria-describedby="llms-err-address">
                                     <span class="llms-err" id="llms-err-address" hidden></span>
                                 </div>
+                                <div class="llms-field">
+                                    <label for="llms-city">Ciudad</label>
+                                    <input id="llms-city" type="text" autocomplete="address-level2" maxlength="120" placeholder="Bogotá" aria-describedby="llms-err-city">
+                                    <span class="llms-err" id="llms-err-city" hidden></span>
+                                </div>
+                            </div>
+                            <div class="llms-row">
                                 <div class="llms-field">
                                     <label for="llms-phone">Teléfono</label>
                                     <input id="llms-phone" type="tel" autocomplete="tel" maxlength="40" placeholder="+57 300 000 0000" aria-describedby="llms-err-phone">
                                     <span class="llms-err" id="llms-err-phone" hidden></span>
                                 </div>
+                                <div class="llms-field llms-field-spacer" aria-hidden="true"></div>
                             </div>
                             <div class="llms-field">
                                 <label for="llms-profiles">Tus perfiles <span class="llms-optional">(opcional)</span></label>
@@ -761,6 +770,7 @@ function llmstxt_ajax_generate() {
     $website = esc_url_raw( trim(       wp_unslash( $_POST['website'] ?? '' ) ) );
     $biz     = sanitize_text_field(     wp_unslash( $_POST['biz']     ?? '' ) );
     $address = sanitize_text_field(     wp_unslash( $_POST['address'] ?? '' ) );
+    $city    = sanitize_text_field(     wp_unslash( $_POST['city']    ?? '' ) );
     $phone   = sanitize_text_field(     wp_unslash( $_POST['phone']   ?? '' ) );
     $urls    = sanitize_textarea_field( wp_unslash( $_POST['urls']    ?? '' ) );
     $profiles_raw = sanitize_textarea_field( wp_unslash( $_POST['profiles'] ?? '' ) );
@@ -774,8 +784,11 @@ function llmstxt_ajax_generate() {
     if ( isset( $_POST['biz'] ) || isset( $_POST['address'] ) || isset( $_POST['phone'] ) ) {
         if ( '' === $biz )     llmstxt_field_error( 'biz', '¿Cómo se llama tu negocio?' );
         if ( '' === $address ) llmstxt_field_error( 'address', 'Añade la dirección tal como sale en Google.' );
+        if ( isset( $_POST['city'] ) && '' === $city ) llmstxt_field_error( 'city', '¿En qué ciudad está tu negocio?' );
         if ( strlen( preg_replace( '/\D/', '', $phone ) ) < 7 ) llmstxt_field_error( 'phone', 'Añade un teléfono con indicativo.' );
-        $nap = $biz . "\n" . $address . "\n" . $phone;
+        // La ciudad se añade a la dirección del NAP si no está ya escrita en ella.
+        $full_address = ( '' !== $city && false === stripos( remove_accents( $address ), remove_accents( $city ) ) ) ? $address . ', ' . $city : $address;
+        $nap = $biz . "\n" . $full_address . "\n" . $phone;
     } else {
         $nap = sanitize_textarea_field( wp_unslash( $_POST['nap'] ?? '' ) );
         if ( '' === $nap ) llmstxt_field_error( 'biz', 'Completa el nombre, la dirección y el teléfono de tu negocio.' );
@@ -806,6 +819,7 @@ function llmstxt_ajax_generate() {
         'website'        => $website,
         'nap'            => $nap,
         'urls_submitted' => $urls,
+        'city'           => $city,
         'profiles'       => implode( "\n", $profiles ),
         'ip_address'     => $ip,
     ] );
@@ -1016,13 +1030,13 @@ function llmstxt_generate_content( $website, $nap, $urls ) {
     if ( '' === $text ) {
         return new WP_Error( 'empty', 'OpenAI respondió sin contenido de texto.' );
     }
-    return $text;
+    return llmstxt_normalize_llms( $text );
 }
 
 function llmstxt_build_prompt( $website, $nap, $urls_formatted ) {
     return <<<PROMPT
 You are an expert SEO and GEO (Generative Engine Optimization) specialist.
-Generate a production-ready llms.txt file for the following business.
+Generate a production-ready llms.txt file for the following business, following the llmstxt.org specification.
 Use your web search tool to visit each URL provided and extract real content.
 
 BUSINESS DATA:
@@ -1033,47 +1047,97 @@ BUSINESS DATA:
 URLS TO SEARCH AND INCLUDE:
 {$urls_formatted}
 
-INSTRUCTIONS:
-1. Search each URL to retrieve real page content: title, services, locations, prices if visible.
-2. Detect the language of the business (Spanish or English) from the content found and write the file in that language.
-3. Generate the complete llms.txt following the official llmstxt.org spec strictly.
+LANGUAGE:
+- Detect the language of the business from its pages and write EVERYTHING in that language: headings, labels and descriptions. Never mix languages.
+- Headings and labels by language:
+  - Spanish: "## Servicios", "## Zonas de servicio", "## Sobre nosotros", "## Contacto", "## Cómo citar este negocio"; labels "Nombre", "Dirección", "Teléfono", "Sitio web".
+  - English: "## Services", "## Service Areas", "## About", "## Contact", "## Attribution"; labels "Name", "Address", "Phone", "Website".
+  - Other languages: translate the English ones.
+- The last section is always named exactly "## Optional" in every language (it is a keyword of the specification).
 
-REQUIRED STRUCTURE (in this exact order):
-# [Business Name from NAP]
+STRUCTURE (in this order; omit any section you have nothing real for):
+# [Business name from the NAP]
 
 > [One factual sentence: who they are, what they do, where, who they serve. No adjectives like "best" or "leading".]
 
 [2-4 lines of context written for an LLM: specialty, service area, key facts. No marketing language.]
 
-## Services
-- [Page title](URL): [Specific services found on the page]
+## [Services heading]
+- [Page title](https://full-url): [specific services found on that page]
 
-## Service Areas
-- [Page title](URL): [Geographic coverage found]
+## [Service areas heading]
+- [City, region or country found on the pages]
 
-## About
-- [Page title](URL): [Credentials, experience, team info found]
+## [About heading]
+- [Page title](https://full-url): [credentials, experience, team found on that page]
 
-## Contact
-- Business Name: [from NAP]
-- Address: [from NAP]
-- Phone: [from NAP]
-- Website: {$website}
+## [Contact heading]
+- [Name label]: [from the NAP]
+- [Address label]: [from the NAP]
+- [Phone label]: [from the NAP]
+- [Website label]: {$website}
 
-## Attribution Guidelines
-When referencing this business, use "[Business Name]" and link to {$website}.
-Content may be referenced for informational purposes. For commercial use, contact [phone from NAP].
+## [Attribution heading]
+[One or two sentences: how to reference the business by name and link to {$website}.]
 
 ## Optional
-- [Blog, FAQ, testimonials, or secondary pages](URL): [brief description]
+- [Page title](https://full-url): [blog, FAQ, testimonials or other secondary pages]
 
-RULES:
-- Only include sections that have corresponding URLs with real content found
-- Keep descriptions factual and specific based on what you actually found on each page
-- Do NOT include: privacy policy, cookie policy, login pages, admin URLs
-- Do NOT fabricate prices or credentials not found on the pages
-- Output ONLY the llms.txt content — no explanations, no markdown fences, no preamble, no citations
+FORMAT RULES (strict):
+- Every page entry is a markdown link list item, exactly: "- [Page title](https://full-url): description". Never write "Title (https://url)".
+- Each URL appears at most once in the whole file: put each page only in the section that fits it best.
+- The service areas section is a plain list of places (no links). Omit it if the pages do not name any.
+- Descriptions are factual and specific to what you found on each page. Do not invent prices, credentials or data.
+- Do NOT include privacy policy, cookie policy, login or admin pages.
+- Output ONLY the llms.txt content: no explanations, no markdown fences, no preamble, no citations or source markers.
 PROMPT;
+}
+
+/**
+ * Corrige el llms.txt devuelto por la IA para que cumpla el formato de llmstxt.org aunque el modelo no lo haya seguido:
+ * "- Título (URL): texto" pasa a "- [Título](URL): texto"; se quitan los enlaces repetidos (se conserva el primero),
+ * las secciones que quedan vacías, los espacios al final de línea y las líneas en blanco de más.
+ */
+function llmstxt_normalize_llms( $text ) {
+    $key   = function( $url ) {
+        $p = wp_parse_url( trim( $url ) );
+        if ( empty( $p['host'] ) ) return strtolower( rtrim( $url, '/' ) );
+        return strtolower( preg_replace( '/^www\./i', '', $p['host'] ) ) . rtrim( $p['path'] ?? '', '/' ) . ( isset( $p['query'] ) ? '?' . $p['query'] : '' );
+    };
+    $seen    = [];
+    $out     = [];
+    $section = '';
+    foreach ( preg_split( '/\R/', (string) $text ) as $line ) {
+        $line = rtrim( $line );
+        if ( 0 === strpos( $line, '## ' ) ) $section = strtolower( trim( substr( $line, 3 ) ) );
+        // "- Título (https://url): descripción" → "- [Título](https://url): descripción"
+        if ( preg_match( '/^(\s*[-*]\s+)(?!\[)([^\n]+?)\s*\((https?:\/\/[^\s)]+)\)\s*(?::\s*(.*))?$/', $line, $m ) ) {
+            $line = $m[1] . '[' . trim( $m[2], " :" ) . '](' . $m[3] . ')' . ( isset( $m[4] ) && '' !== trim( $m[4] ) ? ': ' . trim( $m[4] ) : '' );
+        }
+        if ( preg_match( '/^(\s*[-*]\s+)\[[^\]]*\]\((https?:\/\/[^)\s]+)\)(?::\s*(.*))?$/', $line, $m ) ) {
+            $k = $key( $m[2] );
+            if ( isset( $seen[ $k ] ) ) {
+                // Enlace repetido: fuera de "Optional" se conserva la descripción como texto (p. ej. zonas de servicio).
+                if ( 'optional' === $section || empty( $m[3] ) ) continue;
+                $line = $m[1] . trim( $m[3] );
+            } else {
+                $seen[ $k ] = true;
+            }
+        }
+        $out[] = $line;
+    }
+    // Quitar encabezados "## …" que se quedaron sin contenido.
+    $clean = [];
+    $n     = count( $out );
+    for ( $i = 0; $i < $n; $i++ ) {
+        if ( 0 === strpos( $out[ $i ], '## ' ) ) {
+            $j = $i + 1;
+            while ( $j < $n && '' === trim( $out[ $j ] ) ) $j++;
+            if ( $j >= $n || 0 === strpos( $out[ $j ], '#' ) ) { $i = $j - 1; continue; }
+        }
+        $clean[] = $out[ $i ];
+    }
+    return trim( preg_replace( "/\n{3,}/", "\n\n", implode( "\n", $clean ) ) );
 }
 
 /** Une el texto de todos los mensajes de la Responses API y quita fences de markdown. */

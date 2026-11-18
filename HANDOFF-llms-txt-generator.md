@@ -1,7 +1,7 @@
 # Traspaso: Plugin WordPress "LLMs.txt Generator"
 
 Documento para continuar el trabajo en una charla nueva de Claude Code.
-Versión actual: **3.6.0** · Repositorio: `designsandit/llmstxt` · Rama de trabajo: `claude/fix-llms-txt-plugin-87rrD`
+Versión actual: **3.6.1** · Repositorio: `designsandit/llmstxt` · Rama de trabajo: `claude/fix-llms-txt-plugin-87rrD`
 
 ---
 
@@ -60,7 +60,7 @@ En noviembre de 2026 el repositorio se borró y se recreó. La v3.1.0 se reconst
 
 ## 4. Pendientes
 
-0. **Kit 3.6.0** (schema + robots.txt + NAP en `includes/report.php`): probado con 40 casos simulados y con el formulario en escritorio sobre la página real. **No probado con OpenAI real**: confirmar en el primer lead que el schema sale con un tipo específico (si sale `LocalBusiness` sin descripción, la llamada de schema falló: revisa `debug.log`). Pendientes propuestos: "Plan Bing" en el email (sugerencia 4) y foto de visibilidad en IA (sugerencia 5).
+0. **Kit 3.6.0** (schema + robots.txt + NAP en `includes/report.php`): probado con 40 casos simulados y con el formulario en escritorio sobre la página real. **Verificado con OpenAI real** (18-nov-2026): el schema salió `ProfessionalService` con descripción. Ese mismo kit mostró enlaces fuera del formato de llmstxt.org, encabezados en inglés y URLs repetidas, corregido en la 3.6.1 (instrucción nueva + `llmstxt_normalize_llms()`), y que faltaba la ciudad (campo nuevo). **Falta confirmar con OpenAI real** que la instrucción de la 3.6.1 produce encabezados en español. Pendientes propuestos: "Plan Bing" en el email (sugerencia 4) y foto de visibilidad en IA (sugerencia 5).
 0. **Diseño 3.5.0 (Asistente en 3 pasos)**: probado en escritorio (1024, 1366 y 1920 px) inyectado en la página real de designsandit.com, con la respuesta del servidor simulada. Falta probarlo en el sitio con WordPress real, y en móvil. Los prototipos de diseño (A y B) están en https://claude.ai/artifact/SqHfbUM4eV8ivSNg5v1Vnm.
 
 1. ~~Probar el actualizador~~: verificado en el sitio real (3.4.0 → 3.4.1 con "Actualizar ahora"). El repo ahora es **público**, así que no usa token.

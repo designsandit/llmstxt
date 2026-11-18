@@ -1,4 +1,4 @@
-/* LLMs.txt Generator — Estilos v3.6 (diseño "Asistente en 3 pasos", estilo designsandit.com)
+/* LLMs.txt Generator — Estilos v3.6.1 (diseño "Asistente en 3 pasos", estilo designsandit.com)
  *
  * Todo cuelga de #llmstxt-app para que el tema no lo altere.
  * Las tipografías son las del sitio (Exo 2, Montserrat, DM Sans); el plugin no descarga fuentes.
@@ -188,6 +188,8 @@
 #llmstxt-app .llms-row { display: flex; flex-wrap: wrap; gap: 20px; }
 #llmstxt-app .llms-row > .llms-field { flex: 1 1 180px; }
 #llmstxt-app .llms-row > .llms-field-wide { flex: 2 1 240px; }
+#llmstxt-app .llms-row > .llms-field-spacer { flex: 2 1 240px; }
+@media (max-width: 600px) { #llmstxt-app .llms-row > .llms-field-spacer { display: none; } }
 #llmstxt-app .llms-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 #llmstxt-app .llms-field label {
     margin: 0;

@@ -6,7 +6,7 @@ jQuery(function ($) {
 
     var MAX = parseInt(llmstxtAjax.max_urls, 10) || 20;
     var SUGGESTED = ['/servicios', '/nosotros', '/contacto', '/blog'];
-    var STEP_FIELDS = { 1: ['name', 'email'], 2: ['domain', 'biz', 'address', 'phone', 'profiles'], 3: ['urls'] };
+    var STEP_FIELDS = { 1: ['name', 'email'], 2: ['domain', 'biz', 'address', 'city', 'phone', 'profiles'], 3: ['urls'] };
     var HINTS = { 1: 'Paso 1 de 3 · menos de 1 minuto' };
     var state = { step: 1, urls: [] };
 
@@ -76,6 +76,19 @@ jQuery(function ($) {
 
     function showAlert(msg) { $alert.text(msg || '').prop('hidden', !msg); }
 
+    // Igual que reveal(), pero centrado en un campo: deja visible su etiqueta y no lo esconde bajo la cabecera.
+    function revealField($el) {
+        if (!$el.length) return;
+        var el = $el[0];
+        try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+        var r = el.getBoundingClientRect();
+        var offset = Math.min(160, window.innerHeight * 0.2) + 40;
+        if (r.top < offset || r.bottom > window.innerHeight - 24) {
+            var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            window.scrollTo({ top: window.pageYOffset + r.top - offset, behavior: reduce ? 'auto' : 'smooth' });
+        }
+    }
+
     // Enfoca sin que el navegador lleve el elemento al borde superior (donde suele haber una cabecera fija)
     // y desplaza la tarjeta solo si no está bien a la vista.
     function reveal($el) {
@@ -102,6 +115,7 @@ jQuery(function ($) {
             if (!host()) e.domain = 'Escribe tu dominio, por ejemplo: tuempresa.com';
             if (!val('biz')) e.biz = '¿Cómo se llama tu negocio?';
             if (!val('address')) e.address = 'Añade la dirección tal como sale en Google.';
+            if (!val('city')) e.city = '¿En qué ciudad está tu negocio?';
             if (val('phone').replace(/\D/g, '').length < 7) e.phone = 'Añade un teléfono con indicativo.';
             var pr = profiles();
             if (pr[1].length) e.profiles = 'Revisa este enlace: ' + pr[1].join(', ');
@@ -118,7 +132,7 @@ jQuery(function ($) {
             setError(f, e[f] || '');
             if (e[f] && !first) first = f;
         });
-        if (first) $(first === 'urls' ? '#llms-url' : '#llms-' + first).trigger('focus');
+        if (first) revealField($(first === 'urls' ? '#llms-url' : '#llms-' + first));
         return !first;
     }
 
@@ -241,6 +255,7 @@ jQuery(function ($) {
             website: 'https://' + host(),
             biz:     val('biz'),
             address: val('address'),
+            city:    val('city'),
             phone:   val('phone'),
             urls:    state.urls.join('\n'),
             profiles: profiles()[0].join('\n')
@@ -269,7 +284,7 @@ jQuery(function ($) {
             $.each(STEP_FIELDS, function (s, fields) { if (fields.indexOf(data.field) >= 0) step = parseInt(s, 10); });
             goTo(step, false);
             setError(data.field, msg);
-            reveal($(data.field === 'urls' ? '#llms-url' : '#llms-' + data.field));
+            revealField($(data.field === 'urls' ? '#llms-url' : '#llms-' + data.field));
         } else {
             showAlert(msg);
         }
@@ -305,7 +320,7 @@ jQuery(function ($) {
     $app.find('.llms-reset').on('click', function () {
         $form[0].reset();
         state.urls = [];
-        $.each(['name', 'email', 'domain', 'biz', 'address', 'phone', 'urls'], function (_, f) { setError(f, ''); });
+        $.each(['name', 'email', 'domain', 'biz', 'address', 'city', 'phone', 'profiles', 'urls'], function (_, f) { setError(f, ''); });
         showView('form');
         goTo(1);
     });
