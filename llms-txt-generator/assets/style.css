@@ -1,4 +1,4 @@
-/* LLMs.txt Generator — Estilos v3.5 (diseño "Asistente en 3 pasos", estilo designsandit.com)
+/* LLMs.txt Generator — Estilos v3.6 (diseño "Asistente en 3 pasos", estilo designsandit.com)
  *
  * Todo cuelga de #llmstxt-app para que el tema no lo altere.
  * Las tipografías son las del sitio (Exo 2, Montserrat, DM Sans); el plugin no descarga fuentes.
@@ -25,8 +25,13 @@
     --llms-font-btn: "fpo dm sans", "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
     --llms-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
+    --llms-space-top: clamp(48px, 6vw, 88px);
+    --llms-space-bottom: clamp(56px, 7vw, 104px);
+
     max-width: 1120px;
     margin: 0 auto;
+    /* Aire respecto a los bloques de arriba y abajo (el de abajo incluye la sombra de la tarjeta). */
+    padding: var(--llms-space-top) 0 var(--llms-space-bottom);
     font-family: var(--llms-font-body);
     font-size: 16px;
     line-height: 1.5;
@@ -195,7 +200,8 @@
 }
 #llmstxt-app input[type="text"],
 #llmstxt-app input[type="email"],
-#llmstxt-app input[type="tel"] {
+#llmstxt-app input[type="tel"],
+#llmstxt-app textarea {
     display: block;
     width: 100%;
     min-width: 0;
@@ -214,13 +220,24 @@
     outline: none;
     transition: border-color .15s, box-shadow .15s, background .15s;
 }
-#llmstxt-app input::placeholder { color: #8A8A86; opacity: 1; }
-#llmstxt-app input:focus {
+#llmstxt-app textarea {
+    min-height: 96px;
+    padding: 12px 16px;
+    line-height: 1.6;
+    resize: vertical;
+}
+#llmstxt-app input::placeholder,
+#llmstxt-app textarea::placeholder { color: #8A8A86; opacity: 1; }
+#llmstxt-app input:focus,
+#llmstxt-app textarea:focus {
     border-color: var(--llms-blue);
     box-shadow: 3px 3px 0 var(--llms-blue);
     background: #fff;
 }
-#llmstxt-app input.is-invalid { border-color: var(--llms-error); }
+#llmstxt-app input.is-invalid,
+#llmstxt-app textarea.is-invalid { border-color: var(--llms-error); }
+#llmstxt-app .llms-optional { font-weight: 500; color: var(--llms-muted); }
+#llmstxt-app .llms-help { font-size: 14px; color: var(--llms-muted); }
 #llmstxt-app .llms-err { font-size: 14px; font-weight: 500; color: var(--llms-error); }
 #llmstxt-app .llms-prefixed { display: flex; align-items: stretch; }
 #llmstxt-app .llms-prefix {
@@ -456,6 +473,7 @@
 
 /* ─── Móvil ──────────────────────────────────────────────────────────────── */
 @media (max-width: 600px) {
+    #llmstxt-app { --llms-space-top: 40px; --llms-space-bottom: 56px; }
     #llmstxt-app .llms-grid { gap: 32px; }
     #llmstxt-app .llms-card { box-shadow: 6px 6px 0 var(--llms-orange); border-radius: 22px; padding: 26px 18px 28px; }
     #llmstxt-app .llms-step { padding: 0 12px; }

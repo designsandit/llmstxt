@@ -151,9 +151,9 @@ add_action( 'admin_post_llmstxt_export_csv', function() {
 
     $out = fopen( 'php://output', 'w' );
     fwrite( $out, "\xEF\xBB\xBF" ); // BOM: Excel reconoce las tildes
-    fputcsv( $out, [ 'ID', 'Fecha', 'Nombre', 'Email', 'Sitio web', 'NAP', 'URLs', 'Estado', 'Detalle', 'Intentos', 'IP' ], $delimiter, '"', '' );
+    fputcsv( $out, [ 'ID', 'Fecha', 'Nombre', 'Email', 'Sitio web', 'NAP', 'URLs', 'Perfiles', 'Estado', 'Detalle', 'Intentos', 'IP' ], $delimiter, '"', '' );
 
-    $columns = 'id, created_at, name, email, website, nap, urls_submitted, status, error_message, attempts, ip_address';
+    $columns = 'id, created_at, name, email, website, nap, urls_submitted, profiles, status, error_message, attempts, ip_address';
     $last_id = PHP_INT_MAX;
     do {
         $rows = $wpdb->get_results( $wpdb->prepare(
@@ -163,6 +163,8 @@ add_action( 'admin_post_llmstxt_export_csv', function() {
         foreach ( $rows as $row ) {
             $last_id = (int) $row['id'];
             $row['urls_submitted'] = str_replace( "\n", ' | ', (string) $row['urls_submitted'] );
+            $row['profiles']       = str_replace( "\n", ' | ', (string) $row['profiles'] );
+            $row['nap']            = str_replace( "\n", ' | ', (string) $row['nap'] );
             fputcsv( $out, array_map( 'llmstxt_csv_safe', array_values( $row ) ), $delimiter, '"', '' );
         }
     } while ( count( $rows ) === 500 );
@@ -192,6 +194,7 @@ add_filter( 'wp_privacy_personal_data_exporters', function( $exporters ) {
                         [ 'name' => 'Sitio web', 'value' => $r->website ],
                         [ 'name' => 'NAP',       'value' => $r->nap ],
                         [ 'name' => 'URLs',      'value' => $r->urls_submitted ],
+                        [ 'name' => 'Perfiles',  'value' => $r->profiles ],
                         [ 'name' => 'IP',        'value' => $r->ip_address ],
                     ],
                 ];

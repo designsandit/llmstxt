@@ -1,4 +1,4 @@
-/* LLMs.txt Generator — Frontend v3.5: asistente en 3 pasos */
+/* LLMs.txt Generator — Frontend v3.6: asistente en 3 pasos */
 jQuery(function ($) {
 
     var $app = $('#llmstxt-app');
@@ -6,7 +6,7 @@ jQuery(function ($) {
 
     var MAX = parseInt(llmstxtAjax.max_urls, 10) || 20;
     var SUGGESTED = ['/servicios', '/nosotros', '/contacto', '/blog'];
-    var STEP_FIELDS = { 1: ['name', 'email'], 2: ['domain', 'biz', 'address', 'phone'], 3: ['urls'] };
+    var STEP_FIELDS = { 1: ['name', 'email'], 2: ['domain', 'biz', 'address', 'phone', 'profiles'], 3: ['urls'] };
     var HINTS = { 1: 'Paso 1 de 3 · menos de 1 minuto' };
     var state = { step: 1, urls: [] };
 
@@ -42,6 +42,22 @@ jQuery(function ($) {
             var path = u.pathname === '/' ? '' : u.pathname.replace(/\/$/, '');
             return u.protocol + '//' + u.hostname + path + u.search;
         } catch (e) { return null; }
+    }
+
+    // Perfiles opcionales: uno por línea; se acepta sin https://. Devuelve [válidos, inválidos].
+    function profiles() {
+        var ok = [], bad = [];
+        $.each(($('#llms-profiles').val() || '').split(/[\s,]+/), function (_, raw) {
+            raw = $.trim(raw);
+            if (!raw) return;
+            var v = /^https?:\/\//i.test(raw) ? raw : 'https://' + raw;
+            try {
+                var u = new URL(v);
+                if (u.hostname.indexOf('.') > 0) { if (ok.indexOf(v) < 0) ok.push(v); return; }
+            } catch (e) { /* inválido */ }
+            bad.push(raw);
+        });
+        return [ok, bad];
     }
 
     function pretty(u) { return u.replace(/^https?:\/\//, '').replace(/^www\./, ''); }
@@ -87,6 +103,9 @@ jQuery(function ($) {
             if (!val('biz')) e.biz = '¿Cómo se llama tu negocio?';
             if (!val('address')) e.address = 'Añade la dirección tal como sale en Google.';
             if (val('phone').replace(/\D/g, '').length < 7) e.phone = 'Añade un teléfono con indicativo.';
+            var pr = profiles();
+            if (pr[1].length) e.profiles = 'Revisa este enlace: ' + pr[1].join(', ');
+            else if (pr[0].length > 10) e.profiles = 'Máximo 10 perfiles.';
         }
         if (step === 3 && !state.urls.length) e.urls = 'Añade al menos una página.';
         return e;
@@ -223,7 +242,8 @@ jQuery(function ($) {
             biz:     val('biz'),
             address: val('address'),
             phone:   val('phone'),
-            urls:    state.urls.join('\n')
+            urls:    state.urls.join('\n'),
+            profiles: profiles()[0].join('\n')
         })
         .done(function (res) {
             if (res && res.success) {
@@ -267,7 +287,7 @@ jQuery(function ($) {
 
     $back.on('click', function () { goTo(state.step - 1); });
 
-    $app.on('input', 'input', function () {
+    $app.on('input', 'input, textarea', function () {
         var id = (this.id || '').replace('llms-', '');
         setError(id === 'url' ? 'urls' : id, '');
         if (id === 'domain' && state.step === 3) renderUrls();
