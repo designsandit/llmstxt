@@ -1,7 +1,7 @@
 # Traspaso: Plugin WordPress "LLMs.txt Generator"
 
 Documento para continuar el trabajo en una charla nueva de Claude Code.
-Versión actual: **3.4.0** · Repositorio: `designsandit/llmstxt` · Rama de trabajo: `claude/fix-llms-txt-plugin-87rrD`
+Versión actual: **3.4.1** · Repositorio: `designsandit/llmstxt` · Rama de trabajo: `claude/fix-llms-txt-plugin-87rrD`
 
 ---
 

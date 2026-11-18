@@ -242,12 +242,15 @@ add_filter( 'pre_update_option_llmstxt_github_token', function( $new, $old ) {
     return '' === $new ? $old : $new;
 }, 10, 2 );
 
-// Cambiar el origen invalida la caché.
+// Cambiar el origen invalida la caché. La primera vez que se guarda una opción WordPress dispara
+// add_option_* (no update_option_*), así que se escuchan ambos.
+function llmstxt_clear_update_cache() {
+    delete_site_transient( LLMSTXT_UPDATE_CACHE );
+    delete_site_transient( 'llmstxt_update_changelog' );
+}
 foreach ( [ 'llmstxt_update_repo', 'llmstxt_update_branch', 'llmstxt_github_token' ] as $llmstxt_opt ) {
-    add_action( "update_option_{$llmstxt_opt}", function() {
-        delete_site_transient( LLMSTXT_UPDATE_CACHE );
-        delete_site_transient( 'llmstxt_update_changelog' );
-    } );
+    add_action( "add_option_{$llmstxt_opt}", 'llmstxt_clear_update_cache' );
+    add_action( "update_option_{$llmstxt_opt}", 'llmstxt_clear_update_cache' );
 }
 unset( $llmstxt_opt );
 
@@ -291,6 +294,13 @@ add_action( 'llmstxt_settings_fields', function() {
 add_action( 'llmstxt_diagnostics_rows', function( $ok, $fail, $warn ) {
     $info = get_site_transient( LLMSTXT_UPDATE_CACHE );
     echo '<tr><td>Actualizaciones (GitHub)</td><td>';
+    if ( defined( 'LLMSTXT_GITHUB_TOKEN' ) && LLMSTXT_GITHUB_TOKEN ) {
+        echo $ok . 'Token de GitHub definido en wp-config.php.<br>';
+    } elseif ( '' !== llmstxt_update_token() ) {
+        echo $ok . 'Token de GitHub configurado (termina en <code>' . esc_html( substr( llmstxt_update_token(), -4 ) ) . '</code>).<br>';
+    } else {
+        echo $warn . 'Sin token de GitHub (obligatorio si el repositorio es privado).<br>';
+    }
     if ( ! is_array( $info ) ) {
         echo $warn . 'Aún no se ha comprobado. Pulsa "Buscar actualizaciones".';
     } elseif ( $info['error'] ) {

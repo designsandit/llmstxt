@@ -3,7 +3,7 @@
  * Plugin Name: LLMs.txt Generator
  * Plugin URI:  https://tusitio.com
  * Description: Genera archivos llms.txt para negocios usando IA (OpenAI GPT-5 mini + web search). Procesamiento asíncrono vía WP-Cron.
- * Version:     3.4.0
+ * Version:     3.4.1
  * Author:      Tu Agencia SEO
  * License:     GPL2
  * Text Domain: llms-txt-generator
@@ -13,7 +13,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'LLMSTXT_VERSION',       '3.4.0' );
+define( 'LLMSTXT_VERSION',       '3.4.1' );
 define( 'LLMSTXT_PLUGIN_FILE',    __FILE__ );
 define( 'LLMSTXT_PLUGIN_DIR',    plugin_dir_path( __FILE__ ) );
 define( 'LLMSTXT_PLUGIN_URL',    plugin_dir_url( __FILE__ ) );
