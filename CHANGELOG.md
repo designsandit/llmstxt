@@ -1,5 +1,24 @@
 # Changelog — LLMs.txt Generator
 
+## 3.4.0
+
+**Actualizaciones automáticas desde GitHub** (`includes/updater.php`)
+- WordPress detecta las versiones nuevas publicadas en la rama `main` del repositorio (`designsandit/llmstxt`) y muestra "Hay una nueva versión", igual que con los plugins de wordpress.org. El paquete es `dist/llms-txt-generator.zip`.
+- Compatible con el interruptor nativo **"Activar actualizaciones automáticas"** de la página de Plugins.
+- "Ver detalles" muestra este CHANGELOG.
+- Ajustes: repositorio, rama y **token de GitHub** (necesario si el repo es privado; también se puede definir `LLMSTXT_GITHUB_TOKEN` en `wp-config.php`).
+- Diagnóstico: versión disponible, errores de conexión con GitHub (token caducado, sin acceso…) y estado de las actualizaciones automáticas. Botón **"Buscar actualizaciones"**.
+
+**Leads: CSV y privacidad** (`includes/privacy.php`)
+- **Exportar todos a CSV** desde *LLMs.txt Leads* (UTF-8 con BOM y separador `;`, para que abra bien en Excel en español; se protege contra inyección de fórmulas).
+- **Borrar** un lead, o todos los de más de N días.
+- **Borrado automático** de leads con más de N días (Ajustes → Privacidad de los leads; `0` = nunca). Se revisa una vez al día.
+- Integración con **Herramientas → Exportar/Borrar datos personales** de WordPress (solicitudes RGPD por email) y texto sugerido para la política de privacidad.
+
+**Otros**
+- La página de leads muestra el total real (antes mostraba como máximo 500).
+- Puntos de extensión internos: `llmstxt_settings_fields`, `llmstxt_diagnostics_rows`, `llmstxt_diagnostics_buttons`, `llmstxt_leads_toolbar` y `llmstxt_lead_row_actions`.
+
 ## 3.3.1
 - Diagnóstico → **Email: último envío**: registra por dónde salió realmente el último correo (SMTP con host y puerto, o `mail()`/sendmail del servidor), a qué dirección se envió y si hubo autenticación.
 - Diagnóstico → **Email: plugins que intervienen**: lista qué plugins o temas modifican el envío. En la 3.3.0 cualquier plugin enganchado contaba como "SMTP", lo que podía dar un ✓ engañoso.

@@ -3,7 +3,7 @@
  * Plugin Name: LLMs.txt Generator
  * Plugin URI:  https://tusitio.com
  * Description: Genera archivos llms.txt para negocios usando IA (OpenAI GPT-5 mini + web search). Procesamiento asíncrono vía WP-Cron.
- * Version:     3.3.1
+ * Version:     3.4.0
  * Author:      Tu Agencia SEO
  * License:     GPL2
  * Text Domain: llms-txt-generator
@@ -13,7 +13,8 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'LLMSTXT_VERSION',       '3.3.1' );
+define( 'LLMSTXT_VERSION',       '3.4.0' );
+define( 'LLMSTXT_PLUGIN_FILE',    __FILE__ );
 define( 'LLMSTXT_PLUGIN_DIR',    plugin_dir_path( __FILE__ ) );
 define( 'LLMSTXT_PLUGIN_URL',    plugin_dir_url( __FILE__ ) );
 define( 'LLMSTXT_RATE_LIMIT',    5 );     // envíos exitosos por IP…
@@ -23,6 +24,9 @@ define( 'LLMSTXT_MAX_FIELD',     500 );
 define( 'LLMSTXT_DEFAULT_MODEL', 'gpt-5-mini' );
 define( 'LLMSTXT_API_TIMEOUT',   240 );   // segundos de espera a OpenAI
 define( 'LLMSTXT_CRON_HOOK',     'llmstxt_process_job' );
+
+require_once LLMSTXT_PLUGIN_DIR . 'includes/updater.php';  // actualizaciones desde GitHub
+require_once LLMSTXT_PLUGIN_DIR . 'includes/privacy.php';  // CSV, borrado de leads y herramientas de privacidad
 
 function llmstxt_log( $message ) {
     error_log( '[LLMs.txt Generator] ' . $message );
@@ -348,6 +352,7 @@ function llmstxt_settings_page() {
                                value="<?php echo esc_attr( get_option( 'llmstxt_cta_url', '/contacto' ) ); ?>" class="regular-text" />
                     </td>
                 </tr>
+                <?php do_action( 'llmstxt_settings_fields' ); ?>
             </table>
             <?php submit_button( 'Guardar configuración' ); ?>
         </form>
@@ -460,6 +465,7 @@ function llmstxt_settings_page() {
                 <td style="color:#dc2626"><code><?php echo esc_html( $last_db_error ); ?></code></td>
             </tr>
             <?php endif; ?>
+            <?php do_action( 'llmstxt_diagnostics_rows', $ok, $fail, $warn ); ?>
             </tbody>
         </table>
         <p>
@@ -467,6 +473,7 @@ function llmstxt_settings_page() {
             <a href="<?php echo esc_url( llmstxt_action_url( 'llmstxt_test_openai' ) ); ?>" class="button">Probar conexión con OpenAI</a>
             <a href="<?php echo esc_url( llmstxt_action_url( 'llmstxt_test_email' ) ); ?>" class="button">Enviarme un email de prueba</a>
             <a href="<?php echo esc_url( llmstxt_action_url( 'llmstxt_reset_ratelimit' ) ); ?>" class="button">Limpiar límite de intentos</a>
+            <?php do_action( 'llmstxt_diagnostics_buttons' ); ?>
         </p>
         <p class="description">Los administradores conectados no tienen límite de intentos. Los errores detallados también se escriben en <code>wp-content/debug.log</code> si activas <code>WP_DEBUG_LOG</code>.</p>
     </div>
@@ -487,6 +494,7 @@ function llmstxt_leads_page() {
         return;
     }
 
+    $total  = (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . llmstxt_table() );
     $leads  = $wpdb->get_results( $wpdb->prepare( 'SELECT * FROM ' . llmstxt_table() . ' ORDER BY id DESC LIMIT %d', 500 ) );
     $labels = [
         'pending'    => '<span style="color:#d97706">⏳ Pendiente</span>',
@@ -496,7 +504,9 @@ function llmstxt_leads_page() {
     ];
     ?>
     <div class="wrap">
-        <h1>Leads capturados (<?php echo intval( count( $leads ) ); ?>)</h1>
+        <h1>Leads capturados (<?php echo intval( $total ); ?>)</h1>
+        <?php if ( $total > count( $leads ) ) : ?><p>Se muestran los <?php echo intval( count( $leads ) ); ?> más recientes. Exporta a CSV para verlos todos.</p><?php endif; ?>
+        <?php do_action( 'llmstxt_leads_toolbar' ); ?>
         <p class="description">"Reprocesar" genera el archivo y envía el email en ese momento, sin esperar a WP-Cron. Puede tardar 1–3 minutos: no cierres la página.</p>
         <table class="widefat striped">
             <thead><tr>
@@ -525,6 +535,7 @@ function llmstxt_leads_page() {
                                href="<?php echo esc_url( llmstxt_action_url( 'llmstxt_reprocess', [ 'lead_id' => $lead->id ] ) ); ?>"
                                onclick="return confirm('¿Generar y enviar de nuevo el llms.txt a <?php echo esc_js( $lead->email ); ?>?');">Reprocesar</a>
                         <?php endif; ?>
+                        <?php do_action( 'llmstxt_lead_row_actions', $lead ); ?>
                     </td>
                 </tr>
             <?php endforeach; else : ?>
