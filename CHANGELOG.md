@@ -1,5 +1,20 @@
 # Changelog — LLMs.txt Generator
 
+## 3.5.0
+**Nuevo diseño del formulario: "Asistente en 3 pasos"**, con el estilo de designsandit.com.
+- Una columna presenta el beneficio y una tarjeta con borde naranja y sombra sólida contiene el asistente en tres pasos: **Tú → Tu negocio → Tus páginas**, con indicador de progreso.
+- Usa las tipografías que ya carga el sitio (Exo 2, Montserrat, DM Sans): el plugin no descarga fuentes. Los colores son variables CSS (`--llms-*`).
+- El NAP se pide en **3 campos** (nombre del negocio, dirección y teléfono), y el dominio con el prefijo `https://` ya puesto.
+- Las páginas se añaden como **etiquetas**: la página principal se agrega sola, hay sugerencias de un clic (`/servicios`, `/nosotros`, `/contacto`, `/blog`), se pueden pegar varias URLs a la vez o escribir solo la ruta, y hay contador `n / 20`.
+- Los errores aparecen **junto a cada campo**. Si el servidor rechaza un dato, el formulario vuelve al paso y al campo exactos.
+- Pantalla final con la línea de tiempo (recibido → la IA lee tus páginas → revisa tu email y el spam), una vista previa del inicio del archivo y la llamada a tus servicios.
+- Accesibilidad: el foco pasa al título de cada paso, se usan `aria-invalid`/`aria-describedby` y avisos con `role="alert"`, y se respeta `prefers-reduced-motion`. Al cambiar de paso, el desplazamiento deja espacio para la cabecera fija del tema.
+- Servidor: `llmstxt_ajax_generate()` acepta `biz`, `address` y `phone` (y sigue aceptando el campo `nap` antiguo), y devuelve `field` en cada error de validación.
+
+**Autoría**
+- Cabecera: `Author: Designs and IT` y `Author URI` con UTM. `Plugin URI` apunta al repositorio. Se aplica también a "Ver detalles" y al nombre de remitente por defecto (constantes `LLMSTXT_AUTHOR` / `LLMSTXT_AUTHOR_URI`).
+- `CLAUDE.md` con las convenciones del proyecto, la regla de autoría incluida.
+
 ## 3.4.2
 - Se quitan de `assets/style.css` los estilos que ya no se usaban (pantalla de carga, spinner, caja de resultado, botón secundario), restos de cuando el archivo se mostraba en pantalla. 265 → 198 líneas. El formulario se ve igual: comparado píxel a píxel en escritorio y móvil.
 

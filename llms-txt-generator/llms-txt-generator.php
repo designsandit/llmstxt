@@ -1,10 +1,11 @@
 <?php
 /**
  * Plugin Name: LLMs.txt Generator
- * Plugin URI:  https://tusitio.com
+ * Plugin URI:  https://github.com/designsandit/llmstxt
  * Description: Genera archivos llms.txt para negocios usando IA (OpenAI GPT-5 mini + web search). Procesamiento asíncrono vía WP-Cron.
- * Version:     3.4.2
- * Author:      Tu Agencia SEO
+ * Version:     3.5.0
+ * Author:      Designs and IT
+ * Author URI:  https://www.designsandit.com/?utm_source=media-seo&utm_medium=plugin&utm_campaign=lista-plugins
  * License:     GPL2
  * Text Domain: llms-txt-generator
  * Requires at least: 6.0
@@ -13,7 +14,9 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'LLMSTXT_VERSION',       '3.4.2' );
+define( 'LLMSTXT_VERSION',       '3.5.0' );
+define( 'LLMSTXT_AUTHOR',        'Designs and IT' );
+define( 'LLMSTXT_AUTHOR_URI',    'https://www.designsandit.com/?utm_source=media-seo&utm_medium=plugin&utm_campaign=lista-plugins' );
 define( 'LLMSTXT_PLUGIN_FILE',    __FILE__ );
 define( 'LLMSTXT_PLUGIN_DIR',    plugin_dir_path( __FILE__ ) );
 define( 'LLMSTXT_PLUGIN_URL',    plugin_dir_url( __FILE__ ) );
@@ -334,7 +337,7 @@ function llmstxt_settings_page() {
                     <th><label for="llmstxt_from_name">Nombre del remitente</label></th>
                     <td>
                         <input type="text" id="llmstxt_from_name" name="llmstxt_from_name"
-                               value="<?php echo esc_attr( get_option( 'llmstxt_from_name', 'Tu Agencia SEO' ) ); ?>" class="regular-text" />
+                               value="<?php echo esc_attr( get_option( 'llmstxt_from_name', LLMSTXT_AUTHOR ) ); ?>" class="regular-text" />
                     </td>
                 </tr>
                 <tr>
@@ -557,61 +560,153 @@ add_shortcode( 'llmstxt_generator', function() {
     wp_localize_script( 'llmstxt-script', 'llmstxtAjax', [
         'ajax_url' => admin_url( 'admin-ajax.php' ),
         'nonce'    => wp_create_nonce( 'llmstxt_nonce' ),
+        'max_urls' => LLMSTXT_MAX_URLS,
     ] );
     $cta_url = get_option( 'llmstxt_cta_url', '/contacto' ) ?: '/contacto';
+    $check   = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12l5 5 9-10"/></svg>';
 
     ob_start(); ?>
-    <div id="llmstxt-app">
+    <div id="llmstxt-app" class="llms">
+    <div class="llms-grid">
 
-        <div id="llmstxt-step-lead" class="llmstxt-card">
-            <h2>Genera tu <code>llms.txt</code> gratis</h2>
-            <p class="llmstxt-subtitle">Haz que ChatGPT, Claude y Perplexity entiendan tu negocio correctamente.</p>
-            <form id="llmstxt-lead-form" novalidate>
-                <div class="llmstxt-field">
-                    <label for="llmstxt-name">Tu nombre *</label>
-                    <input type="text" id="llmstxt-name" placeholder="Juan Pérez" maxlength="100" required />
-                </div>
-                <div class="llmstxt-field">
-                    <label for="llmstxt-email">Tu email *</label>
-                    <input type="email" id="llmstxt-email" placeholder="juan@tuempresa.com" maxlength="255" required />
-                </div>
-                <div class="llmstxt-field">
-                    <label for="llmstxt-website">Dominio principal de tu sitio *</label>
-                    <input type="url" id="llmstxt-website" placeholder="https://tuempresa.com" maxlength="500" required />
-                </div>
-                <div class="llmstxt-field">
-                    <label for="llmstxt-nap">NAP (Nombre, Dirección, Teléfono) *
-                        <span class="llmstxt-hint">Cópialo exactamente como aparece en Google</span>
-                    </label>
-                    <textarea id="llmstxt-nap" rows="3" maxlength="500"
-                        placeholder="Ejemplo Renovaciones LLC&#10;1234 SW 8th St, Miami, FL 33135&#10;(305) 555-0123" required></textarea>
-                </div>
-                <div class="llmstxt-field">
-                    <label for="llmstxt-urls">URLs importantes de tu sitio *
-                        <span class="llmstxt-hint">Una por línea. Máximo <?php echo intval( LLMSTXT_MAX_URLS ); ?> URLs.</span>
-                    </label>
-                    <textarea id="llmstxt-urls" rows="6"
-                        placeholder="https://tuempresa.com&#10;https://tuempresa.com/servicios&#10;https://tuempresa.com/contacto" required></textarea>
-                </div>
-                <div id="llmstxt-lead-error" class="llmstxt-error" style="display:none"></div>
-                <button type="submit" id="llmstxt-submit-btn" class="llmstxt-btn">Generar mi llms.txt gratis →</button>
-                <p class="llmstxt-privacy">Sin spam. Te enviaremos el archivo a tu email en 1-3 minutos.</p>
-            </form>
+        <div class="llms-intro">
+            <span class="llms-badge">Herramienta gratuita</span>
+            <h2 class="llms-title">Haz que la IA <span>entienda</span> tu negocio</h2>
+            <p class="llms-lead">Creamos tu archivo <strong>llms.txt</strong>: la ficha que ChatGPT, Claude, Gemini y Perplexity leen para saber quién eres, qué ofreces y dónde estás.</p>
+            <ul class="llms-benefits">
+                <li><span class="llms-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span><strong>Listo en 1–3 minutos</strong>, directo a tu email</span></li>
+                <li><span class="llms-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M21 21l-4.3-4.3"/><circle cx="11" cy="11" r="7"/></svg></span><span>La IA <strong>visita tus páginas reales</strong>: nada inventado</span></li>
+                <li><span class="llms-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M12 3l7 4v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9V7z"/><path d="M9 12l2 2 4-4"/></svg></span><span>Gratis y sin spam. Solo te escribimos para enviarte el archivo</span></li>
+            </ul>
         </div>
 
-        <div id="llmstxt-step-success" class="llmstxt-card" style="display:none">
-            <div class="llmstxt-success-header">
-                <span class="llmstxt-check">✓</span>
-                <h3>¡Solicitud recibida!</h3>
-                <p id="llmstxt-success-msg">Estamos analizando tu sitio. Recibirás el archivo en tu email en los próximos 1-3 minutos.</p>
-            </div>
-            <div class="llmstxt-cta-box">
-                <p><strong>¿Quieres que tu negocio aparezca en más búsquedas de IA?</strong></p>
-                <p>Nuestros servicios de SEO Local y GEO ayudan a negocios como el tuyo a dominar los resultados en Google y en herramientas de IA.</p>
-                <a href="<?php echo esc_url( $cta_url ); ?>" class="llmstxt-btn llmstxt-btn-cta">Quiero saber más →</a>
-            </div>
-        </div>
+        <div class="llms-card">
 
+            <div class="llms-view llms-view-form">
+                <ol class="llms-steps" aria-label="Pasos">
+                    <li><span class="llms-step is-current" data-step="1" aria-current="step"><span class="llms-step-n">1</span><span class="llms-step-ok"><?php echo $check; ?></span>Tú</span><span class="llms-step-line" aria-hidden="true"></span></li>
+                    <li><span class="llms-step" data-step="2"><span class="llms-step-n">2</span><span class="llms-step-ok"><?php echo $check; ?></span>Tu negocio</span><span class="llms-step-line" aria-hidden="true"></span></li>
+                    <li><span class="llms-step" data-step="3"><span class="llms-step-n">3</span><span class="llms-step-ok"><?php echo $check; ?></span>Tus páginas</span></li>
+                </ol>
+
+                <form id="llmstxt-lead-form" novalidate>
+                    <section class="llms-panel" data-panel="1">
+                        <h3 class="llms-h" tabindex="-1">¿A quién se lo enviamos?</h3>
+                        <p class="llms-sub">Tu archivo llegará a este email en unos minutos.</p>
+                        <div class="llms-fields">
+                            <div class="llms-field">
+                                <label for="llms-name">Tu nombre</label>
+                                <input id="llms-name" type="text" autocomplete="name" maxlength="100" placeholder="Juan Pérez" aria-describedby="llms-err-name">
+                                <span class="llms-err" id="llms-err-name" hidden></span>
+                            </div>
+                            <div class="llms-field">
+                                <label for="llms-email">Tu email</label>
+                                <input id="llms-email" type="email" autocomplete="email" maxlength="255" placeholder="juan@tuempresa.com" aria-describedby="llms-err-email">
+                                <span class="llms-err" id="llms-err-email" hidden></span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="llms-panel" data-panel="2" hidden>
+                        <h3 class="llms-h" tabindex="-1">Cuéntanos de tu negocio</h3>
+                        <p class="llms-sub">Escríbelo tal como aparece en tu ficha de Google.</p>
+                        <div class="llms-fields">
+                            <div class="llms-field">
+                                <label for="llms-domain">Tu sitio web</label>
+                                <div class="llms-prefixed">
+                                    <span class="llms-prefix" aria-hidden="true">https://</span>
+                                    <input id="llms-domain" type="text" inputmode="url" autocomplete="url" maxlength="500" placeholder="tuempresa.com" aria-describedby="llms-err-domain">
+                                </div>
+                                <span class="llms-err" id="llms-err-domain" hidden></span>
+                            </div>
+                            <div class="llms-field">
+                                <label for="llms-biz">Nombre del negocio</label>
+                                <input id="llms-biz" type="text" autocomplete="organization" maxlength="150" placeholder="Ejemplo Renovaciones LLC" aria-describedby="llms-err-biz">
+                                <span class="llms-err" id="llms-err-biz" hidden></span>
+                            </div>
+                            <div class="llms-row">
+                                <div class="llms-field llms-field-wide">
+                                    <label for="llms-address">Dirección</label>
+                                    <input id="llms-address" type="text" autocomplete="street-address" maxlength="250" placeholder="Cra. 7 # 71-21, Bogotá" aria-describedby="llms-err-address">
+                                    <span class="llms-err" id="llms-err-address" hidden></span>
+                                </div>
+                                <div class="llms-field">
+                                    <label for="llms-phone">Teléfono</label>
+                                    <input id="llms-phone" type="tel" autocomplete="tel" maxlength="40" placeholder="+57 300 000 0000" aria-describedby="llms-err-phone">
+                                    <span class="llms-err" id="llms-err-phone" hidden></span>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="llms-panel" data-panel="3" hidden>
+                        <h3 class="llms-h" tabindex="-1">¿Qué páginas debe leer la IA?</h3>
+                        <p class="llms-sub">Elige tus páginas más importantes: servicios, sedes, quiénes somos. Puedes pegar varias a la vez.</p>
+                        <div class="llms-field">
+                            <label for="llms-url">Añadir página</label>
+                            <div class="llms-add">
+                                <input id="llms-url" type="text" inputmode="url" placeholder="/servicios o https://tuempresa.com/servicios" aria-describedby="llms-err-urls">
+                                <button type="button" class="llms-btn llms-btn-ghost" id="llms-add">Añadir</button>
+                            </div>
+                            <span class="llms-err" id="llms-err-urls" hidden></span>
+                        </div>
+                        <div class="llms-sugs" hidden>
+                            <span class="llms-sugs-label">Sugerencias:</span>
+                        </div>
+                        <div class="llms-urlbox">
+                            <div class="llms-urlbox-head">
+                                <span>Páginas elegidas</span>
+                                <span class="llms-count" aria-live="polite">0 / <?php echo intval( LLMSTXT_MAX_URLS ); ?></span>
+                            </div>
+                            <p class="llms-empty">Todavía no hay páginas. Empieza por tu página principal.</p>
+                            <ul class="llms-chips"></ul>
+                        </div>
+                    </section>
+
+                    <p class="llms-alert" role="alert" hidden></p>
+
+                    <div class="llms-nav">
+                        <button type="button" class="llms-btn llms-btn-ghost llms-back" hidden>← Atrás</button>
+                        <span class="llms-hint">Paso 1 de 3 · menos de 1 minuto</span>
+                        <button type="submit" class="llms-btn llms-btn-primary llms-next">Siguiente →</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="llms-view llms-view-sending" role="status" hidden>
+                <svg class="llms-spin" width="56" height="56" viewBox="0 0 50 50" aria-hidden="true" focusable="false"><circle cx="25" cy="25" r="20" fill="none" stroke="#ECF3EF" stroke-width="6"/><path d="M25 5a20 20 0 0 1 20 20" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/></svg>
+                <p>Enviando tu solicitud…</p>
+            </div>
+
+            <div class="llms-view llms-view-done" role="status" hidden>
+                <div class="llms-done-head">
+                    <span class="llms-done-check" aria-hidden="true"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M5 12l5 5 9-10"/></svg></span>
+                    <div>
+                        <h3 class="llms-done-title" tabindex="-1">¡Listo, <span data-out="first"></span>!</h3>
+                        <p>Ya estamos trabajando en el llms.txt de <strong data-out="biz"></strong>.</p>
+                    </div>
+                </div>
+                <ol class="llms-timeline">
+                    <li class="is-done"><span class="llms-tl-ico"><?php echo $check; ?></span><div><strong>Solicitud recibida</strong><small>Ahora mismo</small></div></li>
+                    <li class="is-working"><span class="llms-tl-ico"><svg class="llms-spin" width="18" height="18" viewBox="0 0 50 50" aria-hidden="true" focusable="false"><path d="M25 5a20 20 0 0 1 20 20" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/></svg></span><div><strong>La IA está leyendo tus <span data-out="count"></span> páginas</strong><small>Entre 1 y 3 minutos</small></div></li>
+                    <li class="is-next"><span class="llms-tl-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></span><div><strong>Te llega a <span data-out="email"></span></strong><small>Si no lo ves, revisa la carpeta de spam</small></div></li>
+                </ol>
+                <div class="llms-preview" aria-label="Vista previa del archivo">
+                    <p class="llms-preview-label">Así empezará tu archivo, y la IA completará cada sección:</p>
+                    <div class="llms-preview-body"></div>
+                </div>
+                <div class="llms-cta">
+                    <div>
+                        <strong>¿Quieres aparecer en las respuestas de la IA?</strong>
+                        <p>El llms.txt es el primer paso. Te ayudamos con SEO Local y GEO.</p>
+                    </div>
+                    <a class="llms-btn llms-btn-cta" href="<?php echo esc_url( $cta_url ); ?>">¡Quiero más clientes!</a>
+                </div>
+                <button type="button" class="llms-link llms-reset">Generar otro archivo</button>
+            </div>
+
+        </div>
+    </div>
     </div>
     <?php
     return ob_get_clean();
@@ -623,6 +718,11 @@ add_shortcode( 'llmstxt_generator', function() {
 
 add_action( 'wp_ajax_llmstxt_generate',        'llmstxt_ajax_generate' );
 add_action( 'wp_ajax_nopriv_llmstxt_generate', 'llmstxt_ajax_generate' );
+
+/** Error de validación asociado a un campo: el formulario lleva al usuario al paso y campo exactos. */
+function llmstxt_field_error( $field, $message ) {
+    wp_send_json_error( [ 'message' => $message, 'field' => $field ] );
+}
 
 function llmstxt_ajax_generate() {
 
@@ -639,32 +739,36 @@ function llmstxt_ajax_generate() {
     $name    = sanitize_text_field(     wp_unslash( $_POST['name']    ?? '' ) );
     $email   = sanitize_email(          wp_unslash( $_POST['email']   ?? '' ) );
     $website = esc_url_raw( trim(       wp_unslash( $_POST['website'] ?? '' ) ) );
-    $nap     = sanitize_textarea_field( wp_unslash( $_POST['nap']     ?? '' ) );
+    $biz     = sanitize_text_field(     wp_unslash( $_POST['biz']     ?? '' ) );
+    $address = sanitize_text_field(     wp_unslash( $_POST['address'] ?? '' ) );
+    $phone   = sanitize_text_field(     wp_unslash( $_POST['phone']   ?? '' ) );
     $urls    = sanitize_textarea_field( wp_unslash( $_POST['urls']    ?? '' ) );
 
-    if ( ! $name || ! $email || ! $website || ! $nap || ! $urls ) {
-        wp_send_json_error( [ 'message' => 'Por favor completa todos los campos requeridos.' ] );
-    }
-    if ( mb_strlen( $name ) > 100 ) {
-        wp_send_json_error( [ 'message' => 'El nombre es demasiado largo (máx. 100 caracteres).' ] );
-    }
-    if ( ! is_email( $email ) ) {
-        wp_send_json_error( [ 'message' => 'El email no es válido.' ] );
-    }
-    if ( ! llmstxt_is_http_url( $website ) ) {
-        wp_send_json_error( [ 'message' => 'La URL del sitio debe comenzar con https:// o http://.' ] );
+    if ( '' === $name )                 llmstxt_field_error( 'name', 'Escribe tu nombre.' );
+    if ( mb_strlen( $name ) > 100 )     llmstxt_field_error( 'name', 'El nombre es demasiado largo (máx. 100 caracteres).' );
+    if ( ! is_email( $email ) )         llmstxt_field_error( 'email', 'Revisa tu email, por ejemplo: juan@tuempresa.com' );
+    if ( ! llmstxt_is_http_url( $website ) ) llmstxt_field_error( 'domain', 'Escribe tu dominio, por ejemplo: tuempresa.com' );
+
+    // El NAP llega en tres campos (v3.5+). Se acepta también el campo único "nap" de versiones anteriores.
+    if ( isset( $_POST['biz'] ) || isset( $_POST['address'] ) || isset( $_POST['phone'] ) ) {
+        if ( '' === $biz )     llmstxt_field_error( 'biz', '¿Cómo se llama tu negocio?' );
+        if ( '' === $address ) llmstxt_field_error( 'address', 'Añade la dirección tal como sale en Google.' );
+        if ( strlen( preg_replace( '/\D/', '', $phone ) ) < 7 ) llmstxt_field_error( 'phone', 'Añade un teléfono con indicativo.' );
+        $nap = $biz . "\n" . $address . "\n" . $phone;
+    } else {
+        $nap = sanitize_textarea_field( wp_unslash( $_POST['nap'] ?? '' ) );
+        if ( '' === $nap ) llmstxt_field_error( 'biz', 'Completa el nombre, la dirección y el teléfono de tu negocio.' );
     }
     if ( mb_strlen( $nap ) > LLMSTXT_MAX_FIELD ) {
-        wp_send_json_error( [ 'message' => 'El campo NAP es demasiado largo (máx. ' . LLMSTXT_MAX_FIELD . ' caracteres).' ] );
+        llmstxt_field_error( 'address', 'Los datos del negocio son demasiado largos (máx. ' . LLMSTXT_MAX_FIELD . ' caracteres en total).' );
     }
 
     $urls_list = array_values( array_unique( array_filter( array_map( 'trim', preg_split( '/\R/', $urls ) ) ) ) );
-    if ( count( $urls_list ) > LLMSTXT_MAX_URLS ) {
-        wp_send_json_error( [ 'message' => 'Máximo ' . LLMSTXT_MAX_URLS . ' URLs permitidas.' ] );
-    }
+    if ( ! $urls_list )                          llmstxt_field_error( 'urls', 'Añade al menos una página.' );
+    if ( count( $urls_list ) > LLMSTXT_MAX_URLS ) llmstxt_field_error( 'urls', 'Máximo ' . LLMSTXT_MAX_URLS . ' páginas.' );
     foreach ( $urls_list as $u ) {
         if ( ! llmstxt_is_http_url( $u ) ) {
-            wp_send_json_error( [ 'message' => 'URL no válida (debe empezar con https://): ' . $u ] );
+            llmstxt_field_error( 'urls', 'Esta página no es válida (debe empezar con https://): ' . $u );
         }
     }
     $urls = implode( "\n", $urls_list );
@@ -1052,7 +1156,7 @@ function llmstxt_phpmailer_hook_sources() {
 }
 
 function llmstxt_mail_headers( $content_type = true ) {
-    $from_name  = get_option( 'llmstxt_from_name', 'Tu Agencia SEO' ) ?: get_bloginfo( 'name' );
+    $from_name  = get_option( 'llmstxt_from_name', LLMSTXT_AUTHOR ) ?: get_bloginfo( 'name' );
     $from_email = get_option( 'llmstxt_from_email' );
     if ( ! is_email( $from_email ) ) $from_email = get_option( 'admin_email' );
     $from_name  = str_replace( [ "\r", "\n", '"' ], '', $from_name );
@@ -1076,7 +1180,7 @@ function llmstxt_send_to_user( $email, $name, $website, $content ) {
 
     $host      = wp_parse_url( $website, PHP_URL_HOST ) ?: 'tudominio.com';
     $scheme    = wp_parse_url( $website, PHP_URL_SCHEME ) ?: 'https';
-    $from_name = get_option( 'llmstxt_from_name', 'Tu Agencia SEO' );
+    $from_name = get_option( 'llmstxt_from_name', LLMSTXT_AUTHOR );
     $subject   = 'Tu archivo llms.txt está listo — ' . $host;
     $message   = "Hola {$name},\n\n"
                . "Tu archivo llms.txt para {$website} está listo. Lo encontrarás adjunto a este correo.\n\n"

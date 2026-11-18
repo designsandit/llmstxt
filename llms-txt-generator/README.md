@@ -1,4 +1,4 @@
-# LLMs.txt Generator — Plugin WordPress (v3.4.2)
+# LLMs.txt Generator — Plugin WordPress (v3.5.0)
 
 Plugin de lead magnet. El visitante deja sus datos y las URLs de su sitio. El plugin genera un `llms.txt` con **OpenAI `gpt-5-mini` + búsqueda web** (la IA visita las URLs reales) y se lo envía por email como adjunto `llms.txt`.
 
@@ -48,7 +48,11 @@ Se publica una versión nueva cuando llega a `main` un commit que sube la versi�
 - Si tu hosting tiene `DISABLE_WP_CRON`, configura un cron del sistema que llame a `https://tusitio.com/wp-cron.php` cada 1–5 minutos.
 - Los errores también se escriben en `wp-content/debug.log` (con `WP_DEBUG_LOG` activo), con el prefijo `[LLMs.txt Generator]`.
 
+## Diseño del formulario
+
+Es un asistente en 3 pasos (**Tú → Tu negocio → Tus páginas**) con el estilo de designsandit.com. Usa las tipografías del sitio (Exo 2, Montserrat, DM Sans); si un sitio no las tiene, usa las del sistema. Los colores se cambian redefiniendo las variables `--llms-*` sobre `#llmstxt-app` en el CSS del tema.
+
 ## Personalizar
 
-- Texto del CTA: busca `llmstxt-cta-box` en `llms-txt-generator.php`. El enlace se configura en Ajustes.
-- Colores: en `assets/style.css`, cambia `#3b5bdb`.
+- Textos del formulario: en el shortcode `llmstxt_generator` de `llms-txt-generator.php`. El enlace del botón final se configura en Ajustes.
+- Colores: variables `--llms-*` al principio de `assets/style.css`.
